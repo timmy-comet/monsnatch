@@ -1,31 +1,20 @@
 import 'package:get_it/get_it.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-
-import 'core/network/realtime_watcher.dart';
-
-import 'data/repositories/lobby_repository_impl.dart';
-import 'domain/repositories/lobby_repository.dart';
-import 'domain/usecases/watch_lobby.dart';
-import 'domain/usecases/place_card.dart';
-import 'presentation/blocs/lobby/lobby_bloc.dart';
-import 'presentation/blocs/connectivity/connectivity_bloc.dart';
+import 'data/repositories/mock_room_repository.dart';
+import 'domain/repositories/room_repository.dart';
+import 'domain/usecases/create_room.dart';
+import 'domain/usecases/join_room.dart';
+import 'presentation/blocs/room/room_bloc.dart';
 
 final sl = GetIt.instance;
 
-Future<void> initDependencies() async {
-  // ─── Core ───
-  sl.registerLazySingleton(() => RealtimeConnectivityWatcher());
-  sl.registerLazySingleton(() => Connectivity());
+void initDependencies() {
+  // ── Repository ──────────────────────────────
+  sl.registerLazySingleton<RoomRepository>(() => MockRoomRepository());
 
-  // ─── Data ───
-  sl.registerLazySingleton<LobbyRepository>(
-    () => LobbyRepositoryImpl());
+  // ── Use Cases ───────────────────────────────
+  sl.registerLazySingleton(() => CreateRoom(sl()));
+  sl.registerLazySingleton(() => JoinRoom(sl()));
 
-  // ─── Domain ───
-  sl.registerLazySingleton(() => WatchLobby(sl()));
-  sl.registerLazySingleton(() => PlaceCard(sl()));
-
-  // ─── BLoC (factory = new instance per page) ───
-  sl.registerFactory(() => LobbyBloc(watchLobby: sl(), placeCard: sl()));
-  sl.registerFactory(() => ConnectivityBloc(watcher: sl(), connectivity: sl()));
+  // ── BLoC (factory = fresh instance per page) ─
+  sl.registerFactory(() => RoomBloc(createRoom: sl(), joinRoom: sl()));
 }

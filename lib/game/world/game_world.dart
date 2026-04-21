@@ -1,26 +1,24 @@
 import 'package:flame/components.dart';
 import '../components/grid_cell.dart';
 import '../components/hand_row.dart';
+import '../../core/constants/app_assets.dart';
 import '../../domain/entities/card_entity.dart';
 
 class GameWorld extends World {
-  static const int    cols      = 4;
-  static const int    rows      = 4;
-  static const double cellSize  = 72;
-  static const double cellGap   = 6;
-  static const double gridLeft  = 12;
-  static const double gridTop   = 12;
+  static const double cellSize = 70;
+  static const double cellGap  = 7;
+  static const double gridLeft = 14;
+  static const double gridTop  = 10;
 
   final List<GridCell> cells = [];
 
   @override
   Future<void> onLoad() async {
-    // Build 4×4 grid
-    for (int row = 0; row < rows; row++) {
-      for (int col = 0; col < cols; col++) {
-        final index = row * cols + col;
+    // 4×4 grid
+    for (int row = 0; row < 4; row++) {
+      for (int col = 0; col < 4; col++) {
         final cell = GridCell(
-          index: index,
+          index:    row * 4 + col,
           position: Vector2(
             gridLeft + col * (cellSize + cellGap),
             gridTop  + row * (cellSize + cellGap),
@@ -31,17 +29,15 @@ class GameWorld extends World {
       }
     }
 
-    // Sample hand (replace with real data from BLoC)
-    final mockHand = List.generate(
-      7,
-      (i) => CardEntity(
-        id: 'card_$i',
-        name: 'Momon $i',
-        imageAsset: 'assets/images/cards/card_$i.png',
-        power: (i + 1) * 10,
-      ),
-    );
+    // 7-card hand using Card.png for all
+    final hand = List.generate(7, (i) => CardEntity(
+      id:         'card_$i',
+      name:       'Momon ${i + 1}',
+      imageAsset: AppAssets.cardPlaceholder,
+      power:      (i + 1) * 10,
+      isStarred:  i == 2,
+    ));
 
-    await add(HandRow(cards: mockHand, cells: cells));
+    await add(HandRow(cards: hand, cells: cells));
   }
 }
