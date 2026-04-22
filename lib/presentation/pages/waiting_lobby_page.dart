@@ -20,19 +20,20 @@ class WaitingLobbyPage extends StatefulWidget {
 
 class _WaitingLobbyState extends State<WaitingLobbyPage> {
   late RoomEntity _room;
+  late RoomBloc _roomBloc;
   bool _opponentJoined = false;
 
   @override
   void initState() {
     super.initState();
     _room = widget.room;
-    // Open WebSocket to watch for player2 joining
-    context.read<RoomBloc>().add(WatchRoomStarted(_room.code));
+    _roomBloc = context.read<RoomBloc>();
+    _roomBloc.add(WatchRoomStarted(_room.code));
   }
 
   @override
   void dispose() {
-    context.read<RoomBloc>().add(const WatchRoomStopped());
+    _roomBloc.add(const WatchRoomStopped());
     super.dispose();
   }
 
