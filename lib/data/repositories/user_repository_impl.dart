@@ -1,33 +1,44 @@
+import '../../core/errors/exceptions.dart';
+import '../../core/errors/failures.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/user_repository.dart';
-import '../datasources/user_local_data_source.dart';
+import '../datasources/auth_local_datasource.dart';
+import '../datasources/user_remote_datasource.dart';
 
 class UserRepositoryImpl implements UserRepository {
-  final UserLocalDataSource localDataSource;
+  final AuthLocalDataSource   _local;
+  final UserRemoteDataSource  _remote;
 
-  UserRepositoryImpl(this.localDataSource);
+  const UserRepositoryImpl(this._local, this._remote);
 
   @override
   Future<UserEntity?> getUser() async {
-    final name = await localDataSource.getUsername();
+    final uid      = await _local.getUid();
+    final username = await _local.getUsername();
+    if (uid == null || username == null) return null;
 
-    if (name == null) return null;
+    // Token expired → treat as "no user" so the app re-registers
+    final hasToken = await _local.hasValidAuth();
+    if (!hasToken) {
+      await _local.clearAuth();
+      return null;
+    }
 
-    final isGuest = await localDataSource.getIsGuest();
-
-    return UserEntity(
-      username: name,
-      isGuest: isGuest,
-    );
+    return UserEntity(uid: uid, username: username);
   }
 
   @override
   Future<UserEntity> saveUser(String username) async {
-    await localDataSource.saveUser(username);
-
-    return UserEntity(
-      username: username,
-      isGuest: true,
-    );
+    try {
+      final response = await _remote.register(username);
+      await _local.saveAuth(
+        uid:      response.uid,
+        username: response.username,
+        idToken:  response.idToken,
+      );
+      return UserEntity(uid: response.uid, username: response.username);
+    } on ServerException catch (e) {
+      throw const UserFailure('Registration failed. Try again.');
+    }
   }
 }

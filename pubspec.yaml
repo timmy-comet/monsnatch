@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
 
   shared_preferences: ^2.2.2  
+  dio: ^5.4.0
+  web_socket_channel: ^2.4.0
 
   # State Management
   flutter_bloc: ^8.1.3

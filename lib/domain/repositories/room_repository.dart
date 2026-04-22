@@ -5,4 +5,7 @@ import '../../core/errors/failures.dart';
 abstract class RoomRepository {
   Future<Either<Failure, RoomEntity>> createRoom();
   Future<Either<Failure, RoomEntity>> joinRoom(String code);
+  Stream<Either<Failure, RoomEntity>> watchRoom(String code);
+
+  void stopWatching();
 }
