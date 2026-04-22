@@ -10,15 +10,13 @@ abstract class UserRemoteDataSource {
 
 class UserRemoteDataSourceImpl implements UserRemoteDataSource {
   final ApiClient _client;
+
   const UserRemoteDataSourceImpl(this._client);
 
   @override
   Future<RegisterResponse> register(String username) async {
     try {
-      final res = await _client.postPublic<Map<String, dynamic>>(
-        '/register',
-        data: {'username': username},
-      );
+      final res = await _client.post<Map<String, dynamic>>('/register', data: {'username': username});
       return RegisterResponse.fromJson(res.data!);
     } on DioException catch (e) {
       throw ServerException(
