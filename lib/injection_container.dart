@@ -44,7 +44,7 @@ void initDependencies() {
   sl.registerLazySingleton(() => WatchRoom(sl()));
 
   // ── BLoC (factory → fresh instance per page) ────────────
-  sl.registerLazySingleton(() => UserBloc(
+  sl.registerFactory(() => UserBloc(
     getUser:   sl(),
     saveUser:  sl(),
     authLocal: sl(),

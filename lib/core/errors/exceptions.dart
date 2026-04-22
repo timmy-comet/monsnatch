@@ -1,5 +1,4 @@
 /// Thrown by data-layer code; caught and converted to Failures in repositories.
-
 class ServerException implements Exception {
   final String message;
   final int?    statusCode;

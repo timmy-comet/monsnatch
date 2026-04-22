@@ -37,7 +37,7 @@ class UserRepositoryImpl implements UserRepository {
         idToken:  response.idToken,
       );
       return UserEntity(uid: response.uid, username: response.username);
-    } on ServerException catch (e) {
+    } on ServerException {
       throw const UserFailure('Registration failed. Try again.');
     }
   }

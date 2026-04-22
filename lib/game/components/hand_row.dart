@@ -18,7 +18,7 @@ class HandRow extends PositionComponent {
   @override
   Future<void> onLoad() async {
     // Position cards at the bottom of the game view
-    final screenH = _gameHeight - _bottomOffset;
+    const screenH = _gameHeight - _bottomOffset;
 
     for (int i = 0; i < cards.length; i++) {
       await add(DraggableCardComponent(
