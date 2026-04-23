@@ -42,6 +42,9 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
   }
 
   String? _extractError(DioException e) {
-    try { return (e.response?.data as Map)['error'] as String?; } catch (_) { return null; }
+    if (e.response?.data is Map) {
+      return (e.response?.data as Map)['error'] as String?;
+    }
+    return null;
   }
 }
