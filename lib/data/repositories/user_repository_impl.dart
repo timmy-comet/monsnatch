@@ -13,14 +13,13 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<UserEntity?> getUser() async {
-    final uid      = await _local.getUid();
+    final uid = await _local.getUid();
     final username = await _local.getUsername();
-    if (uid == null || username == null) return null;
-
-    // Token expired → treat as "no user" so the app re-registers
     final hasToken = await _local.hasValidAuth();
-    if (!hasToken) {
-      await _local.clearAuth();
+
+    // Combined check for cleaner flow
+    if (uid == null || username == null || !hasToken) {
+      if (!hasToken) await _local.clearAuth();
       return null;
     }
 

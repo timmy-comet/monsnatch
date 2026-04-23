@@ -35,13 +35,24 @@ class _AuthInterceptor extends Interceptor {
   @override
   Future<void> onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
-    final skip = options.headers.remove('skipAuth');
-    if (skip != true) {
-      final token = await _auth.getIdToken();
+    
+    // Phase 1: Research - Registration is the only public endpoint except health
+    final bool isPublicEndpoint = options.path.contains('/register') || 
+                                  options.path.contains('/health');
+
+    if (!isPublicEndpoint) {
+      final token = await _auth.getIdToken(); // Phase 2: Retrieve from Local DS
       if (token != null) {
         options.headers['Authorization'] = 'Bearer $token';
+      } else {
+        // Phase 3: Audit - Handle missing token before request leaves
+        return handler.reject(DioException(
+          requestOptions: options,
+          error: const AuthException('No authentication token found.'),
+        ));
       }
     }
+    
     return handler.next(options);
   }
 
