@@ -32,6 +32,15 @@ dependencies:
   # Utils
   dartz: ^0.10.1
 
+  flutter_svg: ^2.0.9
+
+# Haptic feedback on card placement
+  vibration: ^2.0.1
+
+
+  card_stack_swiper: ^1.1.1
+  animated_cards_carousel: ^1.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

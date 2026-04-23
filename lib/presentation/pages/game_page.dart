@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flame/game.dart';
-import '../../core/constants/app_colors.dart';
+import 'package:monsnatch/core/constants/app_colors.dart';
+import '../../domain/entities/faction.dart';
+import '../../domain/entities/mon_card.dart';
 import '../../domain/entities/room_entity.dart';
 import '../blocs/game/game_bloc.dart';
+import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
-import '../../game/momon_snatch_game.dart';
+import '../widgets/game_header_widget.dart';
+import '../widgets/grid_widget.dart';
+import '../widgets/curved_hand_widget.dart';
+import '../widgets/lens_overlay_widget.dart';
+import 'victory_page.dart';
 
 class GamePage extends StatefulWidget {
   final RoomEntity room;
@@ -16,14 +22,13 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> {
-  late final MonSnatchGame _game;
-  late final GameBloc      _bloc;
+  late final GameBloc _bloc;
 
   @override
   void initState() {
     super.initState();
-    _bloc = GameBloc(widget.room);
-    _game = MonSnatchGame(bloc: _bloc);
+    final faction = (widget.room.player2 != null) ? Faction.moon : Faction.star;
+    _bloc = GameBloc(playerFaction: faction);
   }
 
   @override
@@ -36,181 +41,154 @@ class _GamePageState extends State<GamePage> {
   Widget build(BuildContext context) {
     return BlocProvider.value(
       value: _bloc,
-      child: Scaffold(
-        backgroundColor: AppColors.scaffoldBg,
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Title
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text(
-                  'MOMON SNATCH',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize:   18,
-                    letterSpacing: 2,
-                    color:      AppColors.primaryText,
-                  ),
-                ),
-              ),
-              // Score / Timer bar — bound to GameBloc
-              BlocBuilder<GameBloc, GameState>(
-                builder: (_, state) => _ScoreBar(
-                  p1Score:      state.player1Score,
-                  p2Score:      state.player2Score,
-                  timer:        state.timerSeconds,
-                  isP1Turn:     state.isPlayer1Turn,
-                ),
-              ),
-              // Instruction
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 6),
-                child: Text(
-                  'Select a card to play',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color:    AppColors.subtitleText),
-                ),
-              ),
-              // Flame game
-              Expanded(
-                child: GameWidget(game: _game),
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: const _GameView(),
     );
   }
 }
 
-// ── Score bar ──────────────────────────────────────────────
-class _ScoreBar extends StatelessWidget {
-  final int  p1Score, p2Score, timer;
-  final bool isP1Turn;
-
-  const _ScoreBar({
-    required this.p1Score,
-    required this.p2Score,
-    required this.timer,
-    required this.isP1Turn,
-  });
+class _GameView extends StatelessWidget {
+  const _GameView();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.scoreBg,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          _ScoreChip(
-            score: p1Score,
-            icon:  Icons.star_rounded,
-            active: isP1Turn,
+    return BlocConsumer<GameBloc, GameState>(
+      listenWhen: (p, c) => c.isGameOver && !p.isGameOver,
+      listener: (context, state) {
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => VictoryPage(
+            winner: state.winner,
+            starScore: state.starScore,
+            moonScore: state.moonScore,
+            playerFaction: state.playerFaction,
           ),
-          const Spacer(),
-          _TimerBubble(seconds: timer),
-          const Spacer(),
-          _ScoreChip(
-            score: p2Score,
-            icon:  Icons.nightlight_round,
-            active: !isP1Turn,
-            reversed: true,
+        ));
+      },
+      builder: (context, state) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F5F0),
+          body: SafeArea(
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    GameHeaderWidget(
+                      starScore: state.starScore,
+                      moonScore: state.moonScore,
+                      timerSeconds: state.timerSeconds,
+                      isPlayerTurn: state.isPlayerTurn,
+                      isUrgent: state.isUrgent,
+                      playerFaction: state.playerFaction,
+                    ),
+                    Expanded(
+                      child: GridWidget(
+                        slots: state.grid,
+                        lastFlipped: state.lastFlipped,
+                        selectedCard: state.selectedCard,
+                        onCellTapped: (i) => _handleCellTap(context, state, i),
+                        onCardDropped: (i, card) => _handleCardDrop(context, state, i, card),
+                      ),
+                    ),
+                    const SizedBox(height: 90), // space for hand
+                    _buildStatusBar(state),
+                  ],
+                ),
+                Positioned(
+                  bottom: 5,
+                  left: 0,
+                  right: 0,
+                  child: CurvedHandWidget(
+                    cards: state.playerHand,
+                    focusIndex: state.focusIndex,
+                    selectedIndex: state.selectedIndex,
+                    isPlayerTurn: state.isPlayerTurn,
+                    onSwipedTo: (i) => context.read<GameBloc>().add(HandSwipedTo(i)),
+                    onCardTapped: (i) => context.read<GameBloc>().add(CardSelected(i)),
+                    onLensTapped: () => context.read<GameBloc>().add(const LensToggled()),
+                  ),
+                ),
+                if (state.selectedCard != null && state.isPlayerTurn)
+                  _buildDragFeedback(state),
+                // if (state.isLensOpen && state.focusedCard != null)
+                  // Positioned.fill(
+                  //   child: LensOverlayWidget(
+                  //     card: state.focusedCard!,
+                  //     onClose: () => context.read<GameBloc>().add(const LensToggled()),
+                  //   ),
+                  // ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleCellTap(BuildContext context, GameState state, int index) {
+    final card = state.selectedCard;
+    if (card != null && state.isPlayerTurn) {
+      context.read<GameBloc>().add(CardPlacedOnGrid(index, card));
+    }
+  }
+
+  void _handleCardDrop(BuildContext context, GameState state, int index, MonCard card) {
+    if (state.isPlayerTurn) {
+      context.read<GameBloc>().add(CardPlacedOnGrid(index, card));
+    }
+  }
+
+  Widget _buildStatusBar(GameState state) {
+    final totalStars = state.playerHand.fold(0, (s, c) => s + c.rarityStars);
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center, 
+        children: [
+          Text(
+            'Cards: ${state.playerHand.length}', 
+            style: const TextStyle(fontSize: 12, color: AppColors.primaryBrown, fontWeight: FontWeight.w600),
+          ),
+          
+          // Vertical divider or just a gap
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text('|', style: TextStyle(fontSize: 12, color: Colors.black26)),
+          ),
+          
+          Text(
+            'Total Stars: $totalStars', 
+            style: const TextStyle(fontSize: 12, color: AppColors.primaryBrown, fontWeight: FontWeight.w600),
           ),
         ],
       ),
     );
   }
-}
 
-class _ScoreChip extends StatelessWidget {
-  final int      score;
-  final IconData icon;
-  final bool     active;
-  final bool     reversed;
-
-  const _ScoreChip({
-    required this.score,
-    required this.icon,
-    required this.active,
-    this.reversed = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final children = [
-      Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color:        active ? Colors.white : const Color(0xFFDDDDDD),
-          shape:        BoxShape.circle,
-          border: active
-              ? Border.all(color: AppColors.createRoomBtn, width: 1.5)
-              : null,
-        ),
-        child: Icon(icon, size: 16,
-            color: active ? AppColors.createRoomBtn : AppColors.subtitleText),
-      ),
-      const SizedBox(width: 6),
-      Text(
-        '$score',
-        style: const TextStyle(
-          fontSize:   20,
-          fontWeight: FontWeight.w900,
-          color:      AppColors.primaryText,
-        ),
-      ),
-    ];
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color:        active ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: reversed ? children.reversed.toList() : children,
-      ),
-    );
-  }
-}
-
-class _TimerBubble extends StatelessWidget {
-  final int seconds;
-  const _TimerBubble({required this.seconds});
-
-  @override
-  Widget build(BuildContext context) {
-    final urgent = seconds <= 10;
-    return Column(
-      children: [
-        Container(
-          width: 54, height: 54,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: urgent ? const Color(0xFFFFEEEE) : Colors.white,
-            border: Border.all(
-              color: urgent ? Colors.red : const Color(0xFFCCCCCC),
-              width: 2,
+  Widget _buildDragFeedback(GameState state) {
+    return Positioned(
+      bottom: 200,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Draggable<MonCard>(
+          data: state.selectedCard!,
+          feedback: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 70,
+              height: 100,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [BoxShadow(color: AppColors.createRoomBtn.withOpacity(0.6), blurRadius: 20)],
+              ),
+              clipBehavior: Clip.hardEdge,
+              child: Image.asset(state.selectedCard!.imageAsset, fit: BoxFit.cover),
             ),
           ),
-          alignment: Alignment.center,
-          child: Text(
-            '$seconds',
-            style: TextStyle(
-              fontSize:   22,
-              fontWeight: FontWeight.w900,
-              color: urgent ? Colors.red : AppColors.primaryText,
-            ),
-          ),
+          childWhenDragging: const SizedBox(),
+          child: const SizedBox(),
         ),
-        const SizedBox(height: 2),
-        const Text(
-          'Your turn',
-          style: TextStyle(fontSize: 10, color: AppColors.subtitleText),
-        ),
-      ],
+      ),
     );
   }
 }
