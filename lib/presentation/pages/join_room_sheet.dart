@@ -30,7 +30,10 @@ class _JoinRoomSheetState extends State<JoinRoomSheet> {
         if (state is RoomReady) {
           Navigator.of(context).pop();
           Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => WaitingLobbyPage(room: state.room),
+            builder: (ctx) => BlocProvider.value(
+              value: context.read<RoomBloc>(),
+              child: WaitingLobbyPage(room: state.room),
+            ),
           ));
         }
       },
