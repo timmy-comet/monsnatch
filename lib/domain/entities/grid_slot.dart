@@ -1,11 +1,10 @@
 import 'package:equatable/equatable.dart';
-import 'package:monsnatch/domain/entities/card_keyword.dart';
-import 'mon_card.dart';
+import 'card_entity.dart';
 import 'faction.dart';
 
 class GridSlot extends Equatable {
   final int       index;
-  final MonCard?  card;
+  final CardEntity?  card;
   /// The faction that currently OWNS this slot (can change via Snatch).
   final Faction?  ownerFaction;
   /// The faction that ORIGINALLY placed this card (never changes).
@@ -19,9 +18,8 @@ class GridSlot extends Equatable {
   });
 
   bool get isEmpty  => card == null;
-  bool get hasWard  => card?.keywords.contains(CardKeyword.ward) == true;
 
-  GridSlot copyWith({MonCard? card, Faction? ownerFaction, Faction? originalFaction}) =>
+  GridSlot copyWith({CardEntity? card, Faction? ownerFaction, Faction? originalFaction}) =>
       GridSlot(
         index:           index,
         card:            card            ?? this.card,

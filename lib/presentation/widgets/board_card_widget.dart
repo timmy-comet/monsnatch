@@ -1,114 +1,104 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import '../../domain/entities/grid_slot.dart';
-import '../../domain/entities/faction.dart';
+import '../../core/constants/app_colors.dart';
+import '../../domain/entities/card_entity.dart';
 
-class BoardCardWidget extends StatefulWidget {
-  final GridSlot slot;
-  final bool     isFlipped;
-  const BoardCardWidget({super.key, required this.slot, required this.isFlipped});
+class BoardCardWidget extends StatelessWidget {
+  final int         cardId;
+  final CardEntity? card;       // may be null if catalog not yet loaded
+  final bool        isStarOwner;
+  final Color?      borderColor;
 
-  @override
-  State<BoardCardWidget> createState() => _BoardCardState();
-}
-
-class _BoardCardState extends State<BoardCardWidget>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double>    _flip;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 450));
-    _flip = Tween<double>(begin: 0, end: pi).animate(
-        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-  }
-
-  @override
-  void didUpdateWidget(BoardCardWidget old) {
-    super.didUpdateWidget(old);
-    if (widget.isFlipped && !old.isFlipped) {
-      _ctrl.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  const BoardCardWidget({
+    super.key,
+    required this.cardId,
+    required this.card,
+    required this.isStarOwner,
+    this.borderColor,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _flip,
-      builder: (_, __) {
-        final angle = _flip.value;
-        final showFront = angle < pi / 2;
-        return Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.rotationY(showFront ? angle : angle - pi),
-          child: showFront ? _CardFace(slot: widget.slot) : _CardBack(slot: widget.slot),
-        );
-      },
-    );
-  }
-}
+    final tokenColor = isStarOwner
+        ? AppColors.starFaction
+        : AppColors.moonFaction;
+    final tokenIcon  = isStarOwner
+        ? Icons.star_rounded
+        : Icons.nightlight_round;
 
-class _CardFace extends StatelessWidget {
-  final GridSlot slot;
-  const _CardFace({required this.slot});
-
-  @override
-  Widget build(BuildContext context) {
-    final faction = slot.ownerFaction!;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Positioned.fill(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.asset(slot.card!.imageAsset, fit: BoxFit.cover),
-          ),
-        ),
-        // Faction badge — top-right corner
-        Positioned(
-          top: 2, right: 2,
-          child: Container(
-            width: 16, height: 16,
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: faction == Faction.star
-                  ? const Color(0xFFF5C842)
-                  : const Color(0xFF3949AB),
-              shape:      BoxShape.circle,
-              boxShadow:  [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 4)],
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(9),
+        border: borderColor != null
+            ? Border.all(color: borderColor!, width: 2.5)
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+            borderColor != null ? 6.5 : 9),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Card art
+            Image.asset(
+              card?.imageAsset ?? 'assets/images/cards/card_$cardId.png',
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: AppColors.gridCellBg,
+                child: Center(
+                  child: Text(
+                    card?.name ?? '#$cardId',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 8),
+                  ),
+                ),
+              ),
             ),
-            child: SvgPicture.asset(faction.iconAsset),
-          ),
+
+            // Faction token badge — top-right
+            Positioned(
+              top: 3, right: 3,
+              child: Container(
+                width: 18, height: 18,
+                decoration: BoxDecoration(
+                  color:  tokenColor,
+                  shape:  BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                        color:      tokenColor.withOpacity(0.5),
+                        blurRadius: 4)
+                  ],
+                ),
+                child: Icon(tokenIcon,
+                    color: Colors.white, size: 11),
+              ),
+            ),
+
+            // Power badge — bottom-left
+            if (card != null)
+              Positioned(
+                bottom: 3, left: 3,
+                child: Container(
+                  width: 20, height: 20,
+                  decoration: BoxDecoration(
+                    color:  Colors.white.withOpacity(0.85),
+                    shape:  BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${card!.power}',
+                      style: TextStyle(
+                        fontSize:   9,
+                        fontWeight: FontWeight.w900,
+                        color:      tokenColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
-        // Power badge
-        Positioned(
-          bottom: 2, left: 2,
-          child: Container(
-            width: 18, height: 18,
-            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: Text('${slot.card!.power}',
-                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFF222222))),
-          ),
-        ),
-      ],
+      ),
     );
-  }
-}
-
-class _CardBack extends StatelessWidget {
-  final GridSlot slot;
-  const _CardBack({required this.slot});
-
-  @override
-  Widget build(BuildContext context) {
-    return _CardFace(slot: slot); // after 180°, shows same card with new badge
   }
 }

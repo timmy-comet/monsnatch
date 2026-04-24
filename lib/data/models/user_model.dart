@@ -1,19 +1,15 @@
 import '../../domain/entities/user_entity.dart';
 
 class UserModel extends UserEntity {
-  const UserModel({
-    required super.uid,
-    required super.username,
-    super.isGuest,
-  });
+  const UserModel({required super.uid, required super.username});
 
   factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
-        uid:      json['uid']      as String,
-        username: json['username'] as String,
-      );
+    uid:      json['uid']      as String,
+    username: json['username'] as String,
+  );
 }
 
-/// Holds the full register response including the idToken.
+// Holds the full register response including the idToken.
 class RegisterResponse {
   final String uid;
   final String username;

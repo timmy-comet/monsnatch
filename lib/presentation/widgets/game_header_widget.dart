@@ -1,195 +1,157 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:monsnatch/core/constants/app_colors.dart';
-import '../../domain/entities/faction.dart';
+import '../../core/constants/app_colors.dart';
+import '../blocs/game/game_state.dart';
 
 class GameHeaderWidget extends StatelessWidget {
-  final int starScore, moonScore, timerSeconds;
-  final bool isPlayerTurn, isUrgent;
-  final Faction playerFaction;
-
-  const GameHeaderWidget({
-    super.key,
-    required this.starScore,
-    required this.moonScore,
-    required this.timerSeconds,
-    required this.isPlayerTurn,
-    required this.isUrgent,
-    required this.playerFaction,
-  });
+  final GameBlocState state;
+  const GameHeaderWidget({super.key, required this.state});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildStrokedTitle('MOMON SNATCH'),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10 ),
-          decoration: BoxDecoration(
-            color: AppColors.scoreBg,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    final isMyTurn   = state.isMyTurn;
+    final countdown  = state.countdownSeconds;
+    final urgent     = countdown <= 5;
+    final warning    = countdown <= 10;
+    final oppName    = state.opponentUsername ?? 'Opponent';
+
+    return Container(
+      color: AppColors.scoreBg,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Title
+          const Text('MOMON SNATCH',
+              style: TextStyle(
+                fontSize:      18,
+                fontWeight:    FontWeight.w900,
+                color:         AppColors.primaryYellow,
+                letterSpacing: 1.5,
+              )),
+          const SizedBox(height: 6),
+
+          // Score row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _FactionScore(faction: Faction.star, score: starScore),
-              const Spacer(),
-              _TimerBubble(seconds: timerSeconds, isUrgent: isUrgent),
-              const Spacer(),
-              _FactionScore(faction: Faction.moon, score: moonScore, reversed: true),
+              // Star side
+              _FactionScore(
+                isStar:   true,
+                score:    state.iAmStar ? state.myScore : state.opponentScore,
+                isActive: state.iAmStar ? isMyTurn : !isMyTurn,
+              ),
+
+              // Timer circle
+              _TimerCircle(
+                seconds:  countdown,
+                urgent:   urgent,
+                label:    warning
+                    ? 'Hurry!'
+                    : isMyTurn ? 'Your turn' : '$oppName\'s turn',
+              ),
+
+              // Moon side
+              _FactionScore(
+                isStar:   false,
+                score:    state.iAmStar ? state.opponentScore : state.myScore,
+                isActive: state.iAmStar ? !isMyTurn : isMyTurn,
+              ),
             ],
           ),
-        ),
-        const SizedBox(height: 8),
-        _buildStatusMessage(),
-        const SizedBox(height: 12),
-      ],
-    );
-  }
-
-  Widget _buildStrokedTitle(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 6),
-      child: Stack(
-        children: [
-          // Stroke Layer
-          Text(
-            text,
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,            
-              foreground: Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 4
-                ..strokeJoin = StrokeJoin.round
-                ..color = AppColors.primaryBrown,
-            ),
-          ),
-          // Fill Layer
-          Text(
-            text,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,            
-              color: AppColors.primaryYellow,
-            ),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget  _buildStatusMessage() {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: Container(
-        key: ValueKey(isUrgent),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isUrgent ? const Color(0xFFFFF3E0) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: AppColors.primaryBrown.withValues(alpha: 0.5),
-          ),
-        ),
-        child: Text( 
-          isUrgent ? 'Hurry! Card will auto-select in 10s' : 'Select a card to play',
-          style: TextStyle(
-            color: isUrgent ? const Color(0xFFE65100) : AppColors.primaryBrown,
-            fontSize: 12,
-            fontWeight: isUrgent ? FontWeight.w700 : FontWeight.normal,
-          ),
-        ),
       ),
     );
   }
 }
 
 class _FactionScore extends StatelessWidget {
-  final Faction faction;
-  final int score;
-  final bool reversed;
-  const _FactionScore({required this.faction, required this.score, this.reversed = false});
- 
+  final bool isStar;
+  final int  score;
+  final bool isActive;
+  const _FactionScore({
+    required this.isStar,
+    required this.score,
+    required this.isActive,
+  });
+
   @override
   Widget build(BuildContext context) {
-    final children = [
-      Container(   
-        width: 40, 
-        height: 40,
-        decoration: BoxDecoration(
-          color: AppColors.lightBlueBg, 
-          shape: BoxShape.circle ,
-          border: Border.all(
-            color: AppColors.darkGrey.withValues(alpha: 0.7), 
-            width: 1 ),
-            ),
-        padding: const EdgeInsets.all(7),
-        child: SvgPicture.asset(faction.iconAsset),
+    final color = isStar ? AppColors.starFaction : AppColors.moonFaction;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color:        isActive ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow:    isActive
+            ? [const BoxShadow(color: Colors.black12, blurRadius: 6)]
+            : [],
       ),
-      const SizedBox(width: 8),
-      Text('$score', 
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-            color: AppColors.secondaryBrown,
-          )), 
-    ];
-    return Row(children: reversed ? children.reversed.toList() : children);
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius:          12,
+            backgroundColor: isActive ? color : Colors.grey.shade300,
+            child: Icon(
+              isStar ? Icons.star_rounded : Icons.nightlight_round,
+              color: Colors.white, size: 12,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text('$score',
+              style: TextStyle(
+                fontSize:   20,
+                fontWeight: FontWeight.w900,
+                color: isActive ? AppColors.primaryText : Colors.grey.shade400,
+              )),
+        ],
+      ),
+    );
   }
 }
 
-class _TimerBubble extends StatelessWidget {
-  final int seconds;
-  final bool isUrgent;
-  const _TimerBubble({required this.seconds, required this.isUrgent});
+class _TimerCircle extends StatelessWidget {
+  final int    seconds;
+  final bool   urgent;
+  final String label;
+  const _TimerCircle({
+    required this.seconds,
+    required this.urgent,
+    required this.label,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    final veryUrgent = seconds <= 5;
-    return Column(
-      children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: 1.0, end: veryUrgent ? 1.12 : 1.0),
-          duration: const Duration(milliseconds: 500),
-          builder: (_, scale, child) => Transform.scale(scale: scale, child: child!),
-          child: Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: veryUrgent ? const Color(0xFFFF5252) : AppColors.createRoomBtn,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: (veryUrgent ? Colors.red : AppColors.createRoomBtn).withOpacity(0.4),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '$seconds',
-              style: TextStyle(
-                fontSize: 22, 
-                fontWeight: FontWeight.w900, 
-                color: isUrgent ? Colors.white : AppColors.primaryBrown,),
-            ),
+  Widget build(BuildContext context) => Column(
+    children: [
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 52, height: 52,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: urgent ? const Color(0xFFFFEEEE) : Colors.white,
+          border: Border.all(
+            color: urgent ? Colors.red : const Color(0xFFDDDDDD),
+            width: 2,
           ),
+          boxShadow: urgent
+              ? [BoxShadow(
+                  color: Colors.red.withOpacity(0.3), blurRadius: 10)]
+              : [],
         ),
-        const SizedBox(height: 5),
-        Text(
-          isUrgent ? 'Hurry!' : 'Your turn',
+        alignment: Alignment.center,
+        child: Text(
+          '$seconds',
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: isUrgent ? Colors.red : Colors.white,
+            fontSize:   20,
+            fontWeight: FontWeight.w900,
+            color: urgent ? Colors.red : AppColors.primaryText,
           ),
         ),
-      ],
-    );
-  }
+      ),
+      const SizedBox(height: 2),
+      Text(label,
+          style: const TextStyle(
+              fontSize: 10, color: AppColors.subtitleText)),
+    ],
+  );
 }

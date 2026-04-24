@@ -13,12 +13,17 @@ class JoinRoomRequested extends RoomEvent {
   @override List<Object> get props => [code];
 }
 
-/// Starts listening for live updates on an existing room via WebSocket.
+/// Host taps "Start Game" on the waiting lobby.
+class StartGameRequested extends RoomEvent {
+  final String code;
+  const StartGameRequested(this.code);
+  @override List<Object> get props => [code];
+}
+
 class WatchRoomStarted extends RoomEvent {
   final String code;
   const WatchRoomStarted(this.code);
   @override List<Object> get props => [code];
 }
 
-/// Closes the WebSocket connection.
 class WatchRoomStopped extends RoomEvent { const WatchRoomStopped(); }

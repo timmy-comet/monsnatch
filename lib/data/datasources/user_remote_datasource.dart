@@ -5,18 +5,20 @@ import '../models/user_model.dart';
 
 abstract class UserRemoteDataSource {
   Future<RegisterResponse> register(String username);
-  Future<UserModel>          getUser(String uid);
+  Future<UserModel>        getUser(String uid);
 }
 
 class UserRemoteDataSourceImpl implements UserRemoteDataSource {
   final ApiClient _client;
-
   const UserRemoteDataSourceImpl(this._client);
 
   @override
   Future<RegisterResponse> register(String username) async {
     try {
-      final res = await _client.post<Map<String, dynamic>>('/register', data: {'username': username});
+      final res = await _client.postPublic<Map<String, dynamic>>(
+        '/register',
+        data: {'username': username},
+      );
       return RegisterResponse.fromJson(res.data!);
     } on DioException catch (e) {
       throw ServerException(
@@ -40,9 +42,6 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
   }
 
   String? _extractError(DioException e) {
-    if (e.response?.data is Map) {
-      return (e.response?.data as Map)['error'] as String?;
-    }
-    return null;
+    try { return (e.response?.data as Map?)?['error'] as String?; } catch (_) { return null; }
   }
 }

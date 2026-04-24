@@ -1,38 +1,43 @@
 import 'package:equatable/equatable.dart';
-import '../../../domain/entities/mon_card.dart';
+import '../../../domain/entities/room_entity.dart';
 
 sealed class GameEvent extends Equatable {
   const GameEvent();
   @override List<Object?> get props => [];
 }
 
-/// User taps a card in the hand carousel to select it.
-class CardSelected extends GameEvent {
-  final int handIndex;
-  const CardSelected(this.handIndex);
-  @override List<Object> get props => [handIndex];
+/// Called once when entering the battle screen.
+/// Loads card catalog, fetches opponent username, starts WS listener.
+class GameInitialized extends GameEvent {
+  final RoomEntity room;
+  final String     myUid;
+  const GameInitialized({required this.room, required this.myUid});
+  @override List<Object> get props => [room, myUid];
 }
 
-/// User drags or taps a grid cell after selecting a card.
-class CardPlacedOnGrid extends GameEvent {
-  final int     cellIndex;
-  final MonCard card;
-  const CardPlacedOnGrid(this.cellIndex, this.card);
-  @override List<Object> get props => [cellIndex, card];
+/// WS pushed a new room state → replace everything.
+class GameRoomUpdated extends GameEvent {
+  final RoomEntity room;
+  const GameRoomUpdated(this.room);
+  @override List<Object> get props => [room];
 }
 
-/// Fired every second by the timer subscription.
-class TimerTicked extends GameEvent { const TimerTicked(); }
-
-/// Timer hit 0 — auto-place the focused card.
-class AutoPlayTriggered extends GameEvent { const AutoPlayTriggered(); }
-
-/// User swipes hand carousel left/right.
-class HandSwipedTo extends GameEvent {
-  final int focusIndex;
-  const HandSwipedTo(this.focusIndex);
-  @override List<Object> get props => [focusIndex];
+/// Player tapped a card in their hand.
+class GameCardTapped extends GameEvent {
+  final int cardId;
+  const GameCardTapped(this.cardId);
+  @override List<Object> get props => [cardId];
 }
 
-/// Tap the lens icon on the enlarged card.
-class LensToggled extends GameEvent { const LensToggled(); }
+/// Player tapped a valid empty cell.
+class GameCellTapped extends GameEvent {
+  final int cellIndex;
+  const GameCellTapped(this.cellIndex);
+  @override List<Object> get props => [cellIndex];
+}
+
+/// Internal: every 500 ms — recompute countdown from turnDeadline.
+class GameTimerTick extends GameEvent { const GameTimerTick(); }
+
+/// Player left the battle screen.
+class GameExited extends GameEvent { const GameExited(); }

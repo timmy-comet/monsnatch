@@ -1,3 +1,4 @@
+import 'package:dartz/dartz.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/errors/failures.dart';
 import '../../domain/entities/user_entity.dart';
@@ -6,23 +7,18 @@ import '../datasources/auth_local_datasource.dart';
 import '../datasources/user_remote_datasource.dart';
 
 class UserRepositoryImpl implements UserRepository {
-  final AuthLocalDataSource   _local;
-  final UserRemoteDataSource  _remote;
+  final AuthLocalDataSource  _local;
+  final UserRemoteDataSource _remote;
 
   const UserRepositoryImpl(this._local, this._remote);
 
   @override
   Future<UserEntity?> getUser() async {
-    final uid = await _local.getUid();
+    final uid      = await _local.getUid();
     final username = await _local.getUsername();
+    if (uid == null || username == null) return null;
     final hasToken = await _local.hasValidAuth();
-
-    // Combined check for cleaner flow
-    if (uid == null || username == null || !hasToken) {
-      if (!hasToken) await _local.clearAuth();
-      return null;
-    }
-
+    if (!hasToken) { await _local.clearAuth(); return null; }
     return UserEntity(uid: uid, username: username);
   }
 
@@ -31,13 +27,22 @@ class UserRepositoryImpl implements UserRepository {
     try {
       final response = await _remote.register(username);
       await _local.saveAuth(
-        uid:      response.uid,
-        username: response.username,
-        idToken:  response.idToken,
-      );
+        uid: response.uid, username: response.username, idToken: response.idToken);
       return UserEntity(uid: response.uid, username: response.username);
-    } on ServerException {
-      throw const UserFailure('Registration failed. Try again.');
+    } on ServerException catch (e) {
+      throw UserFailure(e.message);
+    }
+  }
+
+  @override
+  Future<Either<Failure, UserEntity>> getUserById(String uid) async {
+    try {
+      final user = await _remote.getUser(uid);
+      return right(user);
+    } on ServerException catch (e) {
+      return left(UserFailure(e.message));
+    } catch (e) {
+      return left(NetworkFailure(e.toString()));
     }
   }
 }

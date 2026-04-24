@@ -1,10 +1,9 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../domain/entities/mon_card.dart';
+import '../../domain/entities/card_entity.dart';
 import 'hand_card_widget.dart';
 
 class CurvedHandWidget extends StatefulWidget {
-  final List<MonCard> cards;
+  final List<CardEntity> cards;
   final int focusIndex;
   final int? selectedIndex;
   final bool isPlayerTurn; // Reintegrated check
@@ -31,8 +30,6 @@ class _CurvedHandState extends State<CurvedHandWidget> {
   late int _focus;
   double _dragStart = 0;
 
-  static const double _cardW = 69;
-  static const double _cardH = 98;
   static const double _cardGap = 65;
   static const double _arcDepth = 6.0;
   static const double _rotationStep = 0.08;
@@ -142,13 +139,11 @@ class _CurvedHandState extends State<CurvedHandWidget> {
                 isFocus ? widget.onCardTapped(i) : _shiftFocus(dist);
               },
               child: HandCardWidget(
+                cardId: i,
                 card: widget.cards[i],
-                isFocused: isFocus,
                 isSelected: widget.selectedIndex == i,
-                // LENS check also respects turn
-                onLensTap: (isFocus && widget.isPlayerTurn) ? widget.onLensTapped : null,
-                width: _cardW,
-                height: _cardH,
+                enabled: widget.isPlayerTurn,
+                onTap: isFocus ? (() => widget.onCardTapped(i)) : null,
               ),
             ),
           ),

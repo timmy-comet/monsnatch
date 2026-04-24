@@ -4,23 +4,18 @@ class CardModel extends CardEntity {
   const CardModel({
     required super.id,
     required super.name,
-    required super.imageAsset,
+    required super.element,
     required super.power,
-    super.isStarred,
+    required super.directions,
   });
 
-  factory CardModel.fromMap(String id, Map<String, dynamic> map) => CardModel(
-        id: id,
-        name: map['name'] as String,
-        imageAsset: map['imageAsset'] as String,
-        power: (map['power'] as int?) ?? 0,
-        isStarred: (map['isStarred'] as bool?) ?? false,
-      );
-
-  Map<String, dynamic> toMap() => {
-        'name': name,
-        'imageAsset': imageAsset,
-        'power': power,
-        'isStarred': isStarred,
-      };
+  factory CardModel.fromJson(Map<String, dynamic> json) => CardModel(
+    id:         json['id']      as int,
+    name:       json['name']    as String,
+    element:    json['element'] as String,
+    power:      json['power']   as int,
+    directions: (json['directions'] as List<dynamic>)
+        .map((d) => d as String)
+        .toList(),
+  );
 }

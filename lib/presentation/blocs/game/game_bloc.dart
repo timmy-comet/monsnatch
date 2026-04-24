@@ -1,165 +1,163 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../domain/entities/faction.dart';
-import '../../../domain/entities/grid_slot.dart';
-import '../../../domain/entities/mon_card.dart';
-import '../../../game/logic/snatch_engine.dart';
-import '../../../game/data/mock_cards.dart';
+import '../../../domain/usecases/get_cards.dart';
+import '../../../domain/usecases/get_user_by_id.dart';
+import '../../../domain/usecases/play_card.dart';
+import '../../../domain/usecases/watch_room.dart';
 import 'game_event.dart';
 import 'game_state.dart';
 
-class GameBloc extends Bloc<GameEvent, GameState> {
-  Timer? _timer;
+class GameBloc extends Bloc<GameEvent, GameBlocState> {
+  final GetCards       _getCards;
+  final GetUserById    _getUserById;
+  final PlayCard       _playCard;
+  final WatchRoom      _watchRoom;
 
-  GameBloc({Faction playerFaction = Faction.star})
-      : super(_initialState(playerFaction)) {
-    on<CardSelected>    (_onCardSelected);
-    on<HandSwipedTo>    (_onHandSwiped);
-    on<CardPlacedOnGrid> (_onCardPlaced, transformer: sequential());
-    on<TimerTicked>     (_onTimerTick);
-    on<AutoPlayTriggered>(_onAutoPlay);
-    on<LensToggled>     (_onLensToggled);
-    _startTimer();
+  Timer? _countdownTimer;
+  StreamSubscription<dynamic>? _wsSub;
+
+  GameBloc({
+    required GetCards       getCards,
+    required GetUserById    getUserById,
+    required PlayCard       playCard,
+    required WatchRoom      watchRoom,
+  })  : _getCards    = getCards,
+        _getUserById = getUserById,
+        _playCard    = playCard,
+        _watchRoom   = watchRoom,
+        super(const GameBlocState()) {
+    on<GameInitialized>(_onInitialized);
+    on<GameRoomUpdated>(_onRoomUpdated);
+    on<GameCardTapped>(_onCardTapped);
+    on<GameCellTapped>(_onCellTapped);
+    on<GameTimerTick>(_onTimerTick);
+    on<GameExited>(_onExited);
   }
 
-  static GameState _initialState(Faction pf) {
-    final deck = MockCards.deck();
-    return GameState(
-      grid:               List.generate(16, (i) => GridSlot(index: i)),
-      playerFaction:      pf,
-      currentTurnFaction: Faction.star, // Star always goes first
-      playerHand:         deck,
-      opponentHand:       MockCards.deck(),
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  Future<void> _onInitialized(
+      GameInitialized event, Emitter<GameBlocState> emit) async {
+    emit(state.copyWith(
+      room:  event.room,
+      myUid: event.myUid,
+      phase: GamePhase.playing,
+    ));
+
+    // 1. Fetch card catalog
+    final cardsResult = await _getCards();
+    cardsResult.fold(
+      (f) => emit(state.copyWith(errorMessage: 'Cards load failed: ${f.message}')),
+      (cards) => emit(state.copyWith(catalog: cards)),
+    );
+
+    // 2. Fetch opponent username
+    final opponentUid = event.room.player1 == event.myUid
+        ? event.room.player2
+        : event.room.player1;
+    if (opponentUid != null) {
+      final userResult = await _getUserById(opponentUid);
+      userResult.fold(
+        (_) {},
+        (user) => emit(state.copyWith(opponentUsername: user.username)),
+      );
+    }
+
+    // 3. Open WebSocket — replace state on every update
+    _listenToRoom(event.room.code);
+
+    // 4. Start 500ms countdown timer
+    _startCountdownTimer();
+  }
+
+  Future<void> _onRoomUpdated(
+      GameRoomUpdated event, Emitter<GameBlocState> emit) async {
+    final newPhase = event.room.status == 'done'
+        ? GamePhase.done
+        : GamePhase.playing;
+
+    emit(state.copyWith(
+      room:         event.room,
+      phase:        newPhase,
+      isSubmitting: false,   // unlock UI on every server ack
+      clearError:   true,
+    ));
+  }
+
+  void _onCardTapped(GameCardTapped event, Emitter<GameBlocState> emit) {
+    // Toggle: tap same card → deselect; tap new card → select.
+    final newId = state.selectedCardId == event.cardId ? null : event.cardId;
+    emit(state.copyWith(selectedCardId: newId, clearSelected: newId == null));
+  }
+
+  Future<void> _onCellTapped(
+      GameCellTapped event, Emitter<GameBlocState> emit) async {
+    if (!state.canPlay(event.cellIndex)) return;
+    if (state.room == null || state.selectedCardId == null) return;
+
+    // Lock UI immediately; do NOT change board locally — wait for WS echo.
+    emit(state.copyWith(isSubmitting: true, clearError: true));
+
+    final result = await _playCard(PlayCardParams(
+      code:      state.room!.code,
+      cellIndex: event.cellIndex,
+      cardId:    state.selectedCardId!,
+    ));
+
+    result.fold(
+      (f) => emit(state.copyWith(
+        isSubmitting: false,
+        errorMessage: f.message,
+      )),
+      // Success: do nothing — WS will push the new state.
+      (_) => {},
     );
   }
 
-  // ── Timer ─────────────────────────────────────────────
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!isClosed) add(const TimerTicked());
-    });
+  void _onTimerTick(GameTimerTick _, Emitter<GameBlocState> emit) {
+    final deadline = state.room?.game?.turnDeadline;
+    if (deadline == null) return;
+    final seconds = deadline.difference(DateTime.now()).inSeconds.clamp(0, 30);
+    emit(state.copyWith(countdownSeconds: seconds));
   }
 
-  void _onTimerTick(TimerTicked _, Emitter<GameState> emit) {
-    if (state.phase == GamePhase.gameOver) return;
-    final newSecs = state.timerSeconds - 1;
-    if (newSecs <= 0) {
-      add(const AutoPlayTriggered());
-      return;
-    }
-    emit(state.copyWith(timerSeconds: newSecs, isUrgent: newSecs <= 10));
+  void _onExited(GameExited _, Emitter<GameBlocState> emit) {
+    _cleanup();
   }
 
-  void _onAutoPlay(AutoPlayTriggered _, Emitter<GameState> emit) {
-    if (!state.isPlayerTurn || state.playerHand.isEmpty) return;
-    // Select focused card, place in first available slot
-    final card = state.focusedCard;
-    if (card == null) return;
-    final firstEmpty = state.grid.indexWhere((s) => s.isEmpty);
-    if (firstEmpty == -1) return;
-    add(CardPlacedOnGrid(firstEmpty, card));
-  }
+  // ── Internal ──────────────────────────────────────────────────────────────
 
-  // ── Selection ─────────────────────────────────────────
-  void _onCardSelected(CardSelected event, Emitter<GameState> emit) {
-    emit(state.copyWith(
-      selectedIndex: event.handIndex,
-      focusIndex:    event.handIndex,
-      isLensOpen:    false,
-    ));
-  }
-
-  void _onHandSwiped(HandSwipedTo event, Emitter<GameState> emit) {
-    emit(state.copyWith(
-      focusIndex:    event.focusIndex,
-      selectedIndex: event.focusIndex, // auto-select focused card
-    ));
-  }
-
-  void _onLensToggled(LensToggled _, Emitter<GameState> emit) {
-    emit(state.copyWith(isLensOpen: !state.isLensOpen));
-  }
-
-  // ── Core placement + Snatch resolution ───────────────
-  void _onCardPlaced(CardPlacedOnGrid event, Emitter<GameState> emit) {
-    final slot = state.grid[event.cellIndex];
-    if (!slot.isEmpty || state.phase == GamePhase.gameOver) return;
-
-    // Run snatch engine
-    final result = SnatchEngine.resolve(
-      grid:        state.grid,
-      placedIndex: event.cellIndex,
-      card:        event.card,
-      faction:     state.currentTurnFaction,
+  void _listenToRoom(String code) {
+    _wsSub?.cancel();
+    final stream = _watchRoom(code);
+    // We use a subscription rather than emit.forEach so it can be cancelled independently.
+    _wsSub = stream.listen(
+      (result) => result.fold(
+        (f) => add(GameRoomUpdated(state.room!)), // keep existing on error
+        (room) => add(GameRoomUpdated(room)),
+      ),
     );
-
-    // Remove card from appropriate hand
-    final newPlayerHand = state.isPlayerTurn
-        ? state.playerHand.where((c) => c.id != event.card.id).toList()
-        : state.playerHand;
-    final newOpponentHand = !state.isPlayerTurn
-        ? state.opponentHand.where((c) => c.id != event.card.id).toList()
-        : state.opponentHand;
-
-    // Update scores
-    final scores = SnatchEngine.countScores(result.grid);
-
-    // Check game over: all 16 slots filled
-    final nextTurn    = state.turnNumber + 1;
-    final isGameOver  = nextTurn > 16;
-    final nextFaction = state.currentTurnFaction.opponent;
-
-    Faction? winner;
-    if (isGameOver) {
-      if      (scores.star >  scores.moon) winner = Faction.star;
-      else if (scores.moon > scores.star)  winner = Faction.moon;
-      // else draw — winner stays null
-    }
-
-    emit(state.copyWith(
-      grid:               result.grid,
-      lastFlipped:        result.flippedIndices,
-      playerHand:         newPlayerHand,
-      opponentHand:       newOpponentHand,
-      currentTurnFaction: isGameOver ? state.currentTurnFaction : nextFaction,
-      focusIndex:         0,
-      clearSelected:      true,
-      timerSeconds:       30,
-      isUrgent:           false,
-      starScore:          scores.star,
-      moonScore:          scores.moon,
-      isLensOpen:         false,
-      phase:              isGameOver ? GamePhase.gameOver : GamePhase.waitingForSelection,
-      turnNumber:         nextTurn,
-      winner:             winner,
-    ));
-
-    if (!isGameOver) _startTimer();
-    else _timer?.cancel();
-
-    // Simple AI: if next turn is opponent, auto-place after delay
-    if (!isGameOver && nextFaction != state.playerFaction) {
-      Future.delayed(const Duration(milliseconds: 1200), () {
-        if (!isClosed) _aiTurn();
-      });
-    }
   }
 
-  /// Minimal AI: places its first card in the first empty slot.
-  void _aiTurn() {
-    if (state.opponentHand.isEmpty) return;
-    final card      = state.opponentHand.first;
-    final emptySlot = state.grid.indexWhere((s) => s.isEmpty);
-    if (emptySlot != -1) add(CardPlacedOnGrid(emptySlot, card));
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => add(const GameTimerTick()),
+    );
+  }
+
+  void _cleanup() {
+    _countdownTimer?.cancel();
+    _wsSub?.cancel();
+    _watchRoom.stop();
+    _countdownTimer = null;
+    _wsSub = null;
   }
 
   @override
   Future<void> close() {
-    _timer?.cancel();
+    _cleanup();
     return super.close();
   }
 }
-
-/// Ensures CardPlacedOnGrid events are processed one at a time (no race with AI).
-EventTransformer<T> sequential<T>() => (events, mapper) => events.asyncExpand(mapper);

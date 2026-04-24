@@ -121,12 +121,7 @@ class DraggableCardComponent extends PositionComponent with DragCallbacks {
         ..strokeWidth = 1,
     );
 
-    // Star badge
-    if (card.isStarred) {
-      final badgePaint = Paint()..color = AppColors.createRoomBtn;
-      canvas.drawCircle(const Offset(_w - 10, 10), 9, badgePaint);
-      final star = TextPaint(style: const TextStyle(fontSize: 10, color: Colors.white));
-      star.render(canvas, '★', Vector2(_w - 10, 10), anchor: Anchor.center);
-    }
+    // TODO: Faction badge (★ or 🌙) computed from room.createdBy vs cell.ownerUid
+    // Moved to presentation layer for clean separation
   }
 }

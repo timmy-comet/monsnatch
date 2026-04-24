@@ -1,140 +1,150 @@
 import 'package:flutter/material.dart';
-import '../../domain/entities/grid_slot.dart';
-import '../../domain/entities/mon_card.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/constants/app_colors.dart';
+import '../blocs/game/game_bloc.dart';
+import '../blocs/game/game_event.dart';
+import '../blocs/game/game_state.dart';
+import 'board_card_widget.dart';
 
 class GridWidget extends StatelessWidget {
-  final List<GridSlot> slots;
-  final List<int> lastFlipped;
-  final MonCard? selectedCard;
-  final ValueChanged<int> onCellTapped;
-  final Function(int, MonCard) onCardDropped;
-
-  const GridWidget({
-    super.key,
-    required this.slots,
-    required this.lastFlipped,
-    required this.selectedCard,
-    required this.onCellTapped,
-    required this.onCardDropped,
-  });
+  final GameBlocState state;
+  const GridWidget({super.key, required this.state});
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const double spacing = 4.0;
-        const double ratio = 0.75;
-        const double outerMargin = 12.0;
+    final game = state.room?.game;
+    final lastMove = game?.lastMove;
 
-        // Use the height provided by the parent to determine the scale
-        // We don't hardcode cellHeight anymore to avoid rounding overflows
-        return Container(
-          width: double.infinity,
-          height: constraints.maxHeight,
-          margin: const EdgeInsets.symmetric(horizontal: outerMargin),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFFB3E5FC), Color(0xFF81D4FA), Color(0xFF65CC9C)],
-              stops: [0.0, 0.6, 1.0],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF4FC3F7), width: 1.5),
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF9FD2E0), Color(0xFF72B8CA)],
+            begin: Alignment.topCenter,
+            end:   Alignment.bottomCenter,
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(spacing),
-            // Center ensures that if the cards are narrower than the screen, 
-            // the background still fills the width.
-            child: Center(
-              child: AspectRatio(
-                // The total grid aspect ratio: (4 cols * 0.75) / 4 rows = 0.75
-                aspectRatio: ratio, 
-                child: Column(
-                  children: List.generate(4, (rowIndex) {
-                    return Expanded(
-                      child: Row(
-                        children: List.generate(4, (colIndex) {
-                          final int index = (rowIndex * 4) + colIndex;
-                          return Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(spacing / 2),
-                              child: _GridCell(
-                                slot: slots[index],
-                                isFlipped: lastFlipped.contains(index),
-                                canPlace: selectedCard != null && slots[index].isEmpty,
-                                onTap: () => onCellTapped(index),
-                                onCardDropped: (card) => onCardDropped(index, card),
-                              ),
-                            ),
-                          );
-                        }),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-            ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: GridView.count(
+            crossAxisCount:   4,
+            crossAxisSpacing: 7,
+            mainAxisSpacing:  7,
+            shrinkWrap:       true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List.generate(16, (i) {
+              final cell   = game?.board[i];
+              final canPlay = state.canPlay(i);
+
+              // Highlight logic
+              Color? borderColor;
+              if (lastMove?.cellIndex == i) {
+                borderColor = Colors.amber.shade400;
+              } else if (lastMove?.captures.contains(i) == true) {
+                borderColor = Colors.pinkAccent.shade100;
+              }
+
+              if (cell != null) {
+                // Placed card
+                final isStarOwner = cell.ownerUid == state.room!.createdBy;
+                return BoardCardWidget(
+                  cardId:      cell.cardId,
+                  card:        state.cardById(cell.cardId),
+                  isStarOwner: isStarOwner,
+                  borderColor: borderColor,
+                );
+              }
+
+              // Empty cell
+              return _EmptyCell(
+                canPlay:     canPlay,
+                borderColor: borderColor,
+                onTap:       canPlay
+                    ? () => context
+                        .read<GameBloc>()
+                        .add(GameCellTapped(i))
+                    : null,
+              );
+            }),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
-class _GridCell extends StatelessWidget {
-  final GridSlot slot;
-  final bool isFlipped, canPlace;
-  final VoidCallback onTap;
-  final ValueChanged<MonCard> onCardDropped;
-
-  const _GridCell({
-    required this.slot,
-    required this.isFlipped,
-    required this.canPlace,
-    required this.onTap,
-    required this.onCardDropped,
+class _EmptyCell extends StatelessWidget {
+  final bool      canPlay;
+  final Color?    borderColor;
+  final VoidCallback? onTap;
+  const _EmptyCell({
+    required this.canPlay,
+    this.borderColor,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return DragTarget<MonCard>(
-      onAcceptWithDetails: (details) => onCardDropped(details.data),
-      builder: (_, candidates, __) {
-        final isDragOver = candidates.isNotEmpty;
-        return GestureDetector(
-          onTap: slot.isEmpty ? onTap : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              color: isDragOver
-                  ? const Color(0x4DF5C842)
-                  : canPlace
-                      ? const Color(0x33FFFFFF)
-                      : const Color(0x44546E9F),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isDragOver 
-                    ? const Color(0xFFF5C842) 
-                    : Colors.white.withOpacity(canPlace ? 0.6 : 0.1),
-                width: 1.2,
-              ),
-            ),
-            child: slot.isEmpty
-                ? const Center(
-                    child: Icon(Icons.add, color: Colors.white24, size: 18))
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      slot.card!.imageAsset,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => 
-                          const Icon(Icons.broken_image, color: Colors.white24),
-                    ),
-                  ),
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color:        canPlay
+              ? AppColors.gridCellBg
+              : AppColors.gridCellBg.withOpacity(0.55),
+          borderRadius: BorderRadius.circular(9),
+          border: borderColor != null
+              ? Border.all(color: borderColor!, width: 2.5)
+              : null,
+        ),
+        child: CustomPaint(
+          painter: _DashedBorderPainter(
+            color: canPlay
+                ? AppColors.cellHighlight.withOpacity(0.8)
+                : AppColors.cellBorder.withOpacity(0.5),
           ),
-        );
-      },
+          child: Center(
+            child: Icon(
+              Icons.add,
+              color: canPlay
+                  ? Colors.white.withOpacity(0.9)
+                  : Colors.white.withOpacity(0.3),
+              size: 22,
+            ),
+          ),
+        ),
+      ),
     );
   }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  const _DashedBorderPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      ..addRRect(RRect.fromLTRBR(
+          1, 1, size.width - 1, size.height - 1, const Radius.circular(9)));
+    const dash = 6.0, gap = 4.5;
+    for (final m in path.computeMetrics()) {
+      double d = 0; bool draw = true;
+      while (d < m.length) {
+        final len = draw ? dash : gap;
+        if (draw) canvas.drawPath(m.extractPath(d, d + len), paint);
+        d += len; draw = !draw;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedBorderPainter old) => old.color != color;
 }

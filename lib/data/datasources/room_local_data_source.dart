@@ -1,5 +1,4 @@
 import 'dart:math';
-import '../../core/constants/app_assets.dart';
 import '../../domain/entities/card_entity.dart';
 
 class RoomLocalDataSource {
@@ -18,11 +17,11 @@ class RoomLocalDataSource {
     return List.generate(
       7,
       (i) => CardEntity(
-        id: 'card_$i',
+        id: i + 1,
         name: 'Momon ${i + 1}',
-        imageAsset: AppAssets.cardPlaceholder,
+        element: 'fire',
         power: (i + 1) * 10,
-        isStarred: i == 2,
+        directions: ['t', 'tr', 'r', 'br', 'b', 'bl', 'l', 'tl'],
       ),
     );
   }

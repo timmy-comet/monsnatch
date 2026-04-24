@@ -26,4 +26,8 @@ abstract class AppColors {
   static const cellBorder     = Color(0xFFCCCCCC);
   static const cellHighlight  = Color(0xFFF5C842);
   static const scoreBg        = Color.fromARGB(121, 93, 198, 202);
+  static const Color starFaction = Color(0xFFF5C842);
+  static const Color moonFaction = Color(0xFF3D4EA0);
+  static const Color gridCellBg  = Color(0xFF7080B8);
+
 }
