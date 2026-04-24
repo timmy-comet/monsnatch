@@ -56,17 +56,7 @@ class RoomBloc extends Bloc<RoomEvent, RoomState> {
     emit(const RoomLoading());
     final result = await _startRoom(event.code);
     result.fold(
-      (f) {
-        // Special case: "Match already in progress" = game was started by other player
-        // Don't error out—the game IS started. WS listener will confirm via room_update.
-        if (f is RoomFailure && 
-            (f.message.toLowerCase().contains('already') || 
-             f.message.toLowerCase().contains('in progress'))) {
-          // Don't emit error; stay in loading until WS confirms game started
-          return;
-        }
-        emit(RoomError(_mapFailure(f)));
-      },
+      (f) => emit(RoomError(_mapFailure(f))),
       (r) => emit(RoomGameStarted(r)),
     );
   }
