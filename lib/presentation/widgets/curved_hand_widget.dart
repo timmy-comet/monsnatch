@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../domain/entities/card_entity.dart';
 import 'hand_card_widget.dart';
 
@@ -107,6 +108,63 @@ class _CurvedHandState extends State<CurvedHandWidget> {
     final isUsed  = widget.usedCardIds.contains(cardId);
     final isSel   = widget.selectedCardId == cardId;
 
+    final tappable = GestureDetector(
+      onTap: () {
+        if (!isFocus) {
+          HapticFeedback.selectionClick();
+          _shiftFocus(dist);
+          return;
+        }
+        if (!widget.isPlayerTurn || isUsed) return;
+        HapticFeedback.lightImpact();
+        widget.onCardTapped(cardId);
+      },
+      child: HandCardWidget(
+        cardId:     cardId,
+        card:       card,
+        isFocused:  isFocus,
+        isSelected: isSel,
+        isUsed:     isUsed,
+        width:      _cardW,
+        height:     _cardH,
+      ),
+    );
+
+    // Drag is only enabled for the focused (center) card on my turn —
+    // other cards must be swiped/tapped to take focus first. Drag-start
+    // auto-selects so cell DragTargets light up.
+    final canDrag = isFocus && widget.isPlayerTurn && !isUsed;
+    final interactive = canDrag
+        ? Draggable<int>(
+            data: cardId,
+            maxSimultaneousDrags: 1,
+            onDragStarted: () {
+              HapticFeedback.lightImpact();
+              if (widget.selectedCardId != cardId) {
+                widget.onCardTapped(cardId);
+              }
+            },
+            feedback: Material(
+              type: MaterialType.transparency,
+              child: SizedBox(
+                width:  _cardW * _focusScale,
+                height: _cardH * _focusScale,
+                child: HandCardWidget(
+                  cardId:     cardId,
+                  card:       card,
+                  isFocused:  true,
+                  isSelected: true,
+                  isUsed:     false,
+                  width:      _cardW * _focusScale,
+                  height:     _cardH * _focusScale,
+                ),
+              ),
+            ),
+            childWhenDragging: const SizedBox(width: _cardW, height: _cardH),
+            child: tappable,
+          )
+        : tappable;
+
     return AnimatedPositioned(
       key: ValueKey(cardId),
       duration: _animDuration,
@@ -126,27 +184,7 @@ class _CurvedHandState extends State<CurvedHandWidget> {
           duration: const Duration(milliseconds: 1000),
           curve: Curves.easeOutBack,
           alignment: Alignment.bottomCenter,
-          child: Center(
-            child: GestureDetector(
-              onTap: () {
-                if (!isFocus) {
-                  _shiftFocus(dist);
-                  return;
-                }
-                if (!widget.isPlayerTurn || isUsed) return;
-                widget.onCardTapped(cardId);
-              },
-              child: HandCardWidget(
-                cardId:     cardId,
-                card:       card,
-                isFocused:  isFocus,
-                isSelected: isSel,
-                isUsed:     isUsed,
-                width:      _cardW,
-                height:     _cardH,
-              ),
-            ),
-          ),
+          child: Center(child: interactive),
         ),
       ),
     );

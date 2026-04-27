@@ -6,14 +6,27 @@ class VictoryOverlay extends StatefulWidget {
   final GameBlocState state;
   final VoidCallback  onLeave;
   final VoidCallback  onPlayAgain;
- 
+
+  /// Disables the Play Again button (e.g. opponent left, or I already voted).
+  final bool playAgainDisabled;
+
+  /// Shows a spinner inside the Play Again button while waiting for the
+  /// server to confirm the new match.
+  final bool playAgainBusy;
+
+  /// Optional helper line shown above the buttons (opp left / waiting / etc).
+  final String? statusLine;
+
   const VictoryOverlay({
     super.key,
     required this.state,
     required this.onLeave,
     required this.onPlayAgain,
+    this.playAgainDisabled = false,
+    this.playAgainBusy     = false,
+    this.statusLine,
   });
- 
+
   @override
   State<VictoryOverlay> createState() => _VictoryOverlayState();
 }
@@ -61,7 +74,10 @@ class _VictoryOverlayState extends State<VictoryOverlay>
                 color:        Colors.white,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [BoxShadow(
-                  color: color.withOpacity(0.45), blurRadius: 40, spreadRadius: 4)],
+                  color: color.withValues(alpha: 0.45),
+                  blurRadius: 40,
+                  spreadRadius: 4,
+                )],
               ),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(title, style: TextStyle(
@@ -73,18 +89,47 @@ class _VictoryOverlayState extends State<VictoryOverlay>
                   const SizedBox(width: 16),
                   _ScoreChip(label: '🌙 ${state.iAmStar ? state.opponentScore : state.myScore}'),
                 ]),
+                if (widget.statusLine != null) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    widget.statusLine!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color:    AppColors.subtitleText,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 // Play Again
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: color,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor: color.withValues(alpha: 0.4),
+                    disabledForegroundColor: Colors.white70,
                     minimumSize:     const Size(220, 50),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                   ),
-                  onPressed: widget.onPlayAgain,
-                  child: const Text('PLAY AGAIN',
-                      style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.5, fontSize: 14)),
+                  onPressed: (widget.playAgainDisabled || widget.playAgainBusy)
+                      ? null
+                      : widget.onPlayAgain,
+                  child: widget.playAgainBusy
+                      ? const SizedBox(
+                          width:  18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor:  AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        )
+                      : const Text('PLAY AGAIN',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                            fontSize: 14,
+                          )),
                 ),
                 const SizedBox(height: 10),
                 // Leave

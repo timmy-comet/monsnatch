@@ -27,7 +27,31 @@ class RoomEntity extends Equatable {
   bool get isOpponentLeft => leftBy != null;
 
   GameStateEntity? get currentGame => game;
- 
+
+  bool hasVotedPlayAgain(String uid) =>
+      playAgainVotes?.contains(uid) ?? false;
+
+  RoomEntity copyWith({
+    String?          code,
+    String?          createdBy,
+    String?          status,
+    String?          player1,
+    String?          player2,
+    GameStateEntity? game,
+    List<String>?    playAgainVotes,
+    String?          leftBy,
+  }) =>
+      RoomEntity(
+        code:           code           ?? this.code,
+        createdBy:      createdBy      ?? this.createdBy,
+        status:         status         ?? this.status,
+        player1:        player1        ?? this.player1,
+        player2:        player2        ?? this.player2,
+        game:           game           ?? this.game,
+        playAgainVotes: playAgainVotes ?? this.playAgainVotes,
+        leftBy:         leftBy         ?? this.leftBy,
+      );
+
   @override
   List<Object?> get props => [code, createdBy, status, player1, player2, game, leftBy];
 }

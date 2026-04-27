@@ -33,6 +33,7 @@ dependencies:
   dartz: ^0.10.1
 
   flutter_svg: ^2.0.9
+  google_fonts: ^6.2.1
 
 # Haptic feedback on card placement
   vibration: ^2.0.1

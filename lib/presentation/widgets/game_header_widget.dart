@@ -1,227 +1,199 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:monsnatch/core/constants/app_colors.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../core/constants/app_colors.dart';
 import '../blocs/game/game_state.dart';
+import 'hurry_banner.dart';
 
-const String _starAsset = 'assets/images/ui/star.svg';
-const String _moonAsset = 'assets/images/ui/moon.svg';
-
+/// Top-of-screen header: stroked "MOMON SNATCH" title, a score pill with
+/// the viewer's chip on the LEFT, opponent's on the RIGHT, a circular
+/// countdown bubble in the middle, and a hurry banner during the
+/// player's turn. Visual ported from `fix-config-game-page` so the look
+/// stays consistent with the stash design.
 class GameHeaderWidget extends StatelessWidget {
+  static const _turnSecs = 30;
+  static const _starIcon = 'assets/images/star_team_icon.svg';
+  static const _moonIcon = 'assets/images/moon_team_icon.svg';
+
   final GameBlocState state;
 
   const GameHeaderWidget({super.key, required this.state});
 
   @override
   Widget build(BuildContext context) {
-    final isMyTurn   = state.isMyTurn;
-    final isUrgent   = state.isUrgent;
-    final seconds    = state.countdownSeconds;
-    final iAmStar    = state.iAmStar;
-    final starScore  = iAmStar ? state.myScore       : state.opponentScore;
-    final moonScore  = iAmStar ? state.opponentScore : state.myScore;
-    final oppName    = state.opponentUsername;
+    final isMyTurn = state.isMyTurn;
+    final iAmStar  = state.iAmStar;
+    final myIcon   = iAmStar ? _starIcon : _moonIcon;
+    final oppIcon  = iAmStar ? _moonIcon : _starIcon;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildStrokedTitle('MOMON SNATCH'),
+        const _GameTitle(),
         Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          margin:  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.scoreBg,
-            borderRadius: BorderRadius.circular(15),
+            color:        AppColors.scorePillBg,
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Column(
             children: [
-              _FactionScore(isStar: true, score: starScore),
-              const Spacer(),
-              _TimerBubble(
-                seconds:  seconds,
-                isUrgent: isUrgent,
-                label:    isUrgent
-                    ? 'Hurry!'
-                    : isMyTurn ? 'Your turn' : "$oppName's turn",
+              Row(
+                children: [
+                  _ScoreChip(iconAsset: myIcon, score: state.myScore),
+                  const Spacer(),
+                  _TimerBubble(
+                      seconds: state.countdownSeconds, max: _turnSecs),
+                  const Spacer(),
+                  _ScoreChip(
+                    iconAsset: oppIcon,
+                    score:     state.opponentScore,
+                    reversed:  true,
+                  ),
+                ],
               ),
-              const Spacer(),
-              _FactionScore(isStar: false, score: moonScore, reversed: true),
+              const SizedBox(height: 8),
+              Text(
+                isMyTurn ? 'Your turn' : "${state.opponentUsername}'s turn",
+                style: GoogleFonts.fredoka(
+                  fontSize:      14,
+                  fontWeight:    FontWeight.w700,
+                  color:         Colors.white,
+                  letterSpacing: 0.5,
+                ),
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
-        _StatusMessage(isUrgent: isUrgent, isMyTurn: isMyTurn),
-        const SizedBox(height: 12),
+        Visibility(
+          visible:           isMyTurn,
+          maintainSize:      true,
+          maintainAnimation: true,
+          maintainState:     true,
+          child: HurryBanner(seconds: state.countdownSeconds),
+        ),
       ],
     );
   }
+}
 
-  Widget _buildStrokedTitle(String text) {
+class _GameTitle extends StatelessWidget {
+  const _GameTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    final base = GoogleFonts.fredoka(
+      fontSize:      24,
+      fontWeight:    FontWeight.w700,
+      letterSpacing: 1.5,
+      height:        1,
+    );
     return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 6),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Stack(
+        alignment: Alignment.center,
         children: [
           Text(
-            text,
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-              foreground: Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 4
-                ..strokeJoin = StrokeJoin.round
-                ..color = AppColors.primaryBrown,
-            ),
-          ),
-          const Text(
             'MOMON SNATCH',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-              color: AppColors.primaryYellow,
+            style: base.copyWith(
+              foreground: Paint()
+                ..style       = PaintingStyle.stroke
+                ..strokeWidth = 4
+                ..strokeJoin  = StrokeJoin.round
+                ..color       = AppColors.titleStroke,
             ),
           ),
+          Text('MOMON SNATCH', style: base.copyWith(color: AppColors.titleFill)),
         ],
       ),
     );
   }
 }
 
-class _StatusMessage extends StatelessWidget {
-  final bool isUrgent;
-  final bool isMyTurn;
-  const _StatusMessage({required this.isUrgent, required this.isMyTurn});
+class _ScoreChip extends StatelessWidget {
+  final String iconAsset;
+  final int    score;
+  final bool   reversed;
 
-  @override
-  Widget build(BuildContext context) {
-    final text = isUrgent
-        ? 'Hurry! Time is running out'
-        : isMyTurn
-            ? 'Select a card to play'
-            : "Opponent's turn";
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: Container(
-        key: ValueKey(text),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isUrgent ? const Color(0xFFFFF3E0) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: AppColors.primaryBrown.withValues(alpha: 0.5),
-          ),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isUrgent ? const Color(0xFFE65100) : AppColors.primaryBrown,
-            fontSize: 12,
-            fontWeight: isUrgent ? FontWeight.w700 : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FactionScore extends StatelessWidget {
-  final bool isStar;
-  final int  score;
-  final bool reversed;
-  const _FactionScore({
-    required this.isStar,
+  const _ScoreChip({
+    required this.iconAsset,
     required this.score,
     this.reversed = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final children = [
-      Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: AppColors.lightBlueBg,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: AppColors.darkGrey.withValues(alpha: 0.7),
-            width: 1,
-          ),
-        ),
-        padding: const EdgeInsets.all(7),
-        child: SvgPicture.asset(isStar ? _starAsset : _moonAsset),
+    final iconCircle = SizedBox(
+      width:  40,
+      height: 40,
+      child:  SvgPicture.asset(iconAsset, fit: BoxFit.contain),
+    );
+    final number = Text(
+      '$score',
+      style: GoogleFonts.fredoka(
+        fontSize:   24,
+        fontWeight: FontWeight.w700,
+        color:      AppColors.scoreText,
       ),
-      const SizedBox(width: 8),
-      Text('$score',
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-            color: AppColors.secondaryBrown,
-          )),
-    ];
-    return Row(children: reversed ? children.reversed.toList() : children);
+    );
+    final children = reversed
+        ? [number, const SizedBox(width: 12), iconCircle]
+        : [iconCircle, const SizedBox(width: 12), number];
+
+    return Transform.translate(
+      offset: const Offset(0, 12),
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+    );
   }
 }
 
 class _TimerBubble extends StatelessWidget {
-  final int    seconds;
-  final bool   isUrgent;
-  final String label;
-  const _TimerBubble({
-    required this.seconds,
-    required this.isUrgent,
-    required this.label,
-  });
+  final int seconds;
+  final int max;
+
+  const _TimerBubble({required this.seconds, required this.max});
 
   @override
   Widget build(BuildContext context) {
-    final veryUrgent = seconds <= 5;
-    return Column(
-      children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: 1.0, end: veryUrgent ? 1.12 : 1.0),
-          duration: const Duration(milliseconds: 500),
-          builder: (_, scale, child) =>
-              Transform.scale(scale: scale, child: child!),
-          child: Container(
-            width: 50,
-            height: 50,
+    final progress = (seconds / max).clamp(0.0, 1.0);
+    return SizedBox(
+      width:  56,
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width:  56,
+            height: 56,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: veryUrgent
-                  ? const Color(0xFFFF5252)
-                  : AppColors.createRoomBtn,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: (veryUrgent ? Colors.red : AppColors.createRoomBtn)
-                      .withValues(alpha: 0.4),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '$seconds',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: isUrgent ? Colors.white : AppColors.primaryBrown,
-              ),
+              shape:  BoxShape.circle,
+              color:  Colors.white,
+              border: Border.all(color: AppColors.cardOutline, width: 2),
             ),
           ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: isUrgent ? Colors.red : Colors.white,
+          SizedBox(
+            width:  64,
+            height: 64,
+            child: CircularProgressIndicator(
+              value:           progress,
+              strokeWidth:     6,
+              backgroundColor: Colors.transparent,
+              valueColor:      const AlwaysStoppedAnimation(AppColors.timerRing),
+              strokeCap:       StrokeCap.round,
+            ),
           ),
-        ),
-      ],
+          Text(
+            '$seconds',
+            style: GoogleFonts.fredoka(
+              fontSize:   22,
+              fontWeight: FontWeight.w700,
+              color:      AppColors.scoreText,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

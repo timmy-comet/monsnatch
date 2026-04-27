@@ -1,6 +1,11 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/errors/failures.dart';
+import '../../../domain/entities/game_cell_entity.dart';
+import '../../../domain/entities/hand_card_entity.dart';
+import '../../../domain/entities/last_move_entity.dart';
+import '../../../domain/services/capture_calculator.dart';
 import '../../../domain/usecases/get_cards.dart';
 import '../../../domain/usecases/get_user_by_id.dart';
 import '../../../domain/usecases/play_card.dart';
@@ -67,11 +72,20 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
     final newPhase = event.room.status == 'done'
         ? GamePhase.done
         : GamePhase.playing;
+
+    // If the chosen card no longer exists in my active hand (e.g. just played),
+    // clear the selection. Keep it if still active so the player can pre-select
+    // while the opponent is thinking.
+    final newActive = event.room.currentGame?.activeCardIds(state.myUid) ?? const <int>[];
+    final keepSelection =
+        state.selectedCardId != null && newActive.contains(state.selectedCardId);
+
     emit(state.copyWith(
-      room:         event.room,
-      phase:        newPhase,
-      isSubmitting: false,  // unlock UI on every server ack
-      clearError:   true,
+      room:          event.room,
+      phase:         newPhase,
+      isSubmitting:  false,  // unlock UI on every server ack
+      clearError:    true,
+      clearSelected: !keepSelection,
     ));
   }
  
@@ -86,26 +100,107 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
  
   Future<void> _onCellTapped(GameCellTapped event, Emitter<GameBlocState> emit) async {
     if (!state.canPlay(event.cellIndex)) return;
-    final roomCode = state.room?.code;
+    final snapshot = state.room;
+    final game     = snapshot?.currentGame;
     final cardId   = state.selectedCardId;
-    if (roomCode == null || cardId == null) return;
- 
-    // Lock UI — do NOT mutate board locally; wait for WS echo
-    emit(state.copyWith(isSubmitting: true, clearError: true));
- 
+    final myUid    = state.myUid;
+    final placed   = state.cardById(cardId ?? -1);
+    if (snapshot == null || game == null || cardId == null || placed == null) {
+      return;
+    }
+
+    // Optimistic placement — apply the move locally so the UI feels instant.
+    // Captures are also computed locally (port of backend `capture.ts`) so
+    // flipped cards animate the moment the card lands. Server echo via WS
+    // overrides on mismatch. On HTTP error we revert to the snapshot.
+    final newBoard = List<GameCellEntity?>.from(game.board);
+    newBoard[event.cellIndex] = GameCellEntity(
+      cardId:   cardId,
+      ownerUid: myUid,
+      placedBy: myUid,
+    );
+
+    final isPlayer2 = snapshot.player2 == myUid;
+    final captures  = CaptureCalculator.compute(
+      placedCard: placed,
+      cellIndex:  event.cellIndex,
+      board:      newBoard,
+      catalog:    state.catalog,
+      isPlayer2:  isPlayer2,
+    );
+    for (final idx in captures) {
+      final target = newBoard[idx];
+      if (target != null) {
+        newBoard[idx] = GameCellEntity(
+          cardId:   target.cardId,
+          ownerUid: myUid,                 // flip to my team
+          placedBy: target.placedBy,       // immutable per backend
+        );
+      }
+    }
+
+    final myHand = game.hands[myUid] ?? const <HandCardEntity>[];
+    final newMyHand = myHand
+        .map((c) => c.cardId == cardId
+            ? HandCardEntity(cardId: c.cardId, used: true)
+            : c)
+        .toList();
+    final newHands = Map<String, List<HandCardEntity>>.from(game.hands)
+      ..[myUid] = newMyHand;
+
+    final oppUid   = state.opponentUid;
+    // Recompute score by counting owners on the board — matches the way
+    // the backend rebuilds it after each placement.
+    final newScore = <String, int>{};
+    for (final cell in newBoard) {
+      if (cell == null) continue;
+      newScore[cell.ownerUid] = (newScore[cell.ownerUid] ?? 0) + 1;
+    }
+
+    final optimisticGame = game.copyWith(
+      board:    newBoard,
+      hands:    newHands,
+      score:    newScore,
+      turn:     oppUid.isEmpty ? game.turn : oppUid,
+      lastMove: LastMoveEntity(
+        cellIndex: event.cellIndex,
+        cardId:    cardId,
+        placedBy:  myUid,
+        captures:  captures,
+      ),
+    );
+    final optimistic = snapshot.copyWith(game: optimisticGame);
+
+    emit(state.copyWith(
+      room:          optimistic,
+      isSubmitting:  true,
+      clearError:    true,
+      clearSelected: true,
+    ));
+
+    // Tactile feedback: stronger thump if we captured anything.
+    if (captures.isNotEmpty) {
+      HapticFeedback.heavyImpact();
+    } else {
+      HapticFeedback.mediumImpact();
+    }
+
     final result = await _playCard(PlayCardParams(
-      code:      roomCode,
+      code:      snapshot.code,
       cellIndex: event.cellIndex,
       cardId:    cardId,
     ));
- 
+
     result.fold(
-      // On error: unlock + show message. Board NOT updated — WS will push correct state.
+      // On error: revert optimistic state, unlock, show error.
       (f) => emit(state.copyWith(
+        room:         snapshot,
         isSubmitting: false,
         errorMessage: _mapFailure(f),
       )),
-      // On success: do nothing — WS echo via RoomBloc → GameRoomUpdated will arrive.
+      // On success: WS echo via RoomBloc → GameRoomUpdated brings the
+      // authoritative board. If captures or score differ slightly the echo
+      // simply overwrites — usually it matches our optimistic copy.
       (_) {},
     );
   }
@@ -128,10 +223,33 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
   }
  
   String _mapFailure(Failure f) => switch (f) {
-    AuthFailure()    => 'Session expired.',
-    NetworkFailure() => 'No connection.',
+    AuthFailure()    => 'Session expired. Please re-open the app.',
+    NetworkFailure() => 'No connection. Check your network.',
+    RoomFailure()    => _humanizeRoomError(f.message),
     _                => f.message,
   };
+
+  /// Rewrite the most common server messages to short, actionable lines.
+  /// Falls back to the raw message if nothing matches.
+  String _humanizeRoomError(String raw) {
+    final m = raw.toLowerCase();
+    if (m.contains('not your turn')) {
+      return "It's not your turn yet.";
+    }
+    if (m.contains('cell occupied') || m.contains('not empty')) {
+      return 'That cell is already taken.';
+    }
+    if (m.contains('card already used') || m.contains('not in hand')) {
+      return 'That card is no longer in your hand.';
+    }
+    if (m.contains('not adjacent')) {
+      return 'You can only play next to a placed card.';
+    }
+    if (m.contains('game over') || m.contains('match over')) {
+      return 'The match has ended.';
+    }
+    return raw;
+  }
  
   @override
   Future<void> close() {

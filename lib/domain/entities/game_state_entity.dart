@@ -33,7 +33,32 @@ class GameStateEntity extends Equatable {
   /// Active (not-yet-played) card IDs for a given player
   List<int> activeCardIds(String uid) =>
       (hands[uid] ?? []).where((c) => !c.used).map((c) => c.cardId).toList();
- 
+
+  GameStateEntity copyWith({
+    List<GameCellEntity?>?              board,
+    Map<String, List<HandCardEntity>>?  hands,
+    String?                             turn,
+    int?                                turnNumber,
+    DateTime?                           turnDeadline,
+    DateTime?                           startedAt,
+    String?                             starUid,
+    Map<String, int>?                   score,
+    String?                             winner,
+    LastMoveEntity?                     lastMove,
+  }) =>
+      GameStateEntity(
+        board:        board        ?? this.board,
+        hands:        hands        ?? this.hands,
+        turn:         turn         ?? this.turn,
+        turnNumber:   turnNumber   ?? this.turnNumber,
+        turnDeadline: turnDeadline ?? this.turnDeadline,
+        startedAt:    startedAt    ?? this.startedAt,
+        starUid:      starUid      ?? this.starUid,
+        score:        score        ?? this.score,
+        winner:       winner       ?? this.winner,
+        lastMove:     lastMove     ?? this.lastMove,
+      );
+
   @override
   List<Object?> get props => [
     board, hands, turn, turnNumber, turnDeadline, score, winner, lastMove, starUid

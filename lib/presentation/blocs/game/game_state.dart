@@ -78,8 +78,10 @@ class GameBlocState extends Equatable {
   /// Client-side validation (spec §10) — server re-validates; this is for UX only
   bool canPlay(int cellIndex) {
     if (!isMyTurn || isSubmitting) return false;
-    if (selectedCardId == null)     return false;
-    if (board[cellIndex] != null)   return false;      // cell occupied
+    if (selectedCardId == null)    return false;
+    if (cellIndex < 0 || cellIndex >= board.length) return false;
+    if (board[cellIndex] != null)  return false;       // cell occupied
+    if (!myActiveCardIds.contains(selectedCardId)) return false; // card already used
     final turnNum = room?.currentGame?.turnNumber ?? 0;
     if (turnNum == 0) return true;                     // first move: any empty cell
     return _isAdjacentToPlaced(cellIndex);             // subsequent: 8-way adjacency

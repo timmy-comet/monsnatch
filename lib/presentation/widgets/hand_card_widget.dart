@@ -55,24 +55,6 @@ class HandCardWidget extends StatelessWidget {
                   )
                 : _placeholder(),
           ),
-          if (card != null)
-            Positioned(
-              top: 4,
-              right: 4,
-              child: Container(
-                width:  20,
-                height: 20,
-                decoration: const BoxDecoration(
-                    color: Colors.white, shape: BoxShape.circle),
-                alignment: Alignment.center,
-                child: Text('${card!.power}',
-                    style: const TextStyle(
-                      color:      Color(0xFF333333),
-                      fontSize:   9,
-                      fontWeight: FontWeight.w900,
-                    )),
-              ),
-            ),
         ],
       ),
     );
