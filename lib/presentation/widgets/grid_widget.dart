@@ -1,129 +1,142 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../core/constants/app_colors.dart';
-import '../../domain/entities/card_entity.dart';
+import '../../domain/entities/game_cell_entity.dart';
 import '../blocs/game/game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
 import 'board_card_widget.dart';
- 
+
 class GridWidget extends StatelessWidget {
   final GameBlocState state;
+
   const GridWidget({super.key, required this.state});
- 
+
   @override
   Widget build(BuildContext context) {
-    final lastMove  = state.room?.currentGame?.lastMove;
- 
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF9FD2E0), Color(0xFF72B8CA)],
-            begin: Alignment.topCenter, end: Alignment.bottomCenter),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: GridView.count(
-            crossAxisCount:   4,
-            crossAxisSpacing: 7,
-            mainAxisSpacing:  7,
-            shrinkWrap:       true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(16, (i) {
-              final cell    = state.board[i];
-              final canPlay = state.canPlay(i);
- 
-              // Highlight borders
-              Color? borderColor;
-              if (lastMove?.cellIndex == i) borderColor = Colors.amber.shade500;
-              else if (lastMove?.captures.contains(i) == true) borderColor = Colors.pinkAccent.shade200;
- 
-              if (cell != null) {
-                return BoardCardWidget(
-                  cardId:      cell.cardId,
-                  card:        state.cardById(cell.cardId),
-                  isStarOwner: state.cellIsStarOwned(i),
-                  borderColor: borderColor,
-                );
-              }
- 
-              return _EmptyCell(
-                canPlay:     canPlay,
-                borderColor: borderColor,
-                onTap: canPlay
-                    ? () => context.read<GameBloc>().add(GameCellTapped(i))
-                    : null,
-              );
-            }),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double spacing = 4.0;
+        const double ratio = 0.75;
+        const double outerMargin = 12.0;
+
+        final lastMove = state.room?.currentGame?.lastMove;
+        final flipped = <int>{
+          if (lastMove != null) ...lastMove.captures,
+        };
+
+        return Container(
+          width: double.infinity,
+          height: constraints.maxHeight,
+          margin: const EdgeInsets.symmetric(horizontal: outerMargin),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFB3E5FC), Color(0xFF81D4FA), Color(0xFF65CC9C)],
+              stops: [0.0, 0.6, 1.0],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF4FC3F7), width: 1.5),
           ),
-        ),
-      ),
+          child: Padding(
+            padding: const EdgeInsets.all(spacing),
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: ratio,
+                child: Column(
+                  children: List.generate(4, (rowIndex) {
+                    return Expanded(
+                      child: Row(
+                        children: List.generate(4, (colIndex) {
+                          final int index = (rowIndex * 4) + colIndex;
+                          final GameCellEntity? cell = state.board[index];
+                          final canPlace = state.canPlay(index);
+                          final isLastPlaced = lastMove?.cellIndex == index;
+                          return Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(spacing / 2),
+                              child: _GridCell(
+                                cell:        cell,
+                                isFlipped:   flipped.contains(index),
+                                isLastPlaced: isLastPlaced,
+                                canPlace:    canPlace,
+                                isStarOwner: state.cellIsStarOwned(index),
+                                cardImage:   cell == null
+                                    ? null
+                                    : state.cardById(cell.cardId)?.imageAsset,
+                                onTap: canPlace
+                                    ? () => context
+                                        .read<GameBloc>()
+                                        .add(GameCellTapped(index))
+                                    : null,
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
- 
-class _EmptyCell extends StatelessWidget {
-  final bool      canPlay;
-  final Color?    borderColor;
+
+class _GridCell extends StatelessWidget {
+  final GameCellEntity? cell;
+  final bool   isFlipped;
+  final bool   isLastPlaced;
+  final bool   canPlace;
+  final bool   isStarOwner;
+  final String? cardImage;
   final VoidCallback? onTap;
-  const _EmptyCell({required this.canPlay, this.borderColor, this.onTap});
- 
+
+  const _GridCell({
+    required this.cell,
+    required this.isFlipped,
+    required this.isLastPlaced,
+    required this.canPlace,
+    required this.isStarOwner,
+    required this.cardImage,
+    required this.onTap,
+  });
+
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      decoration: BoxDecoration(
-        color:        canPlay
-            ? const Color(0xFF7080B8)
-            : const Color(0xFF7080B8).withOpacity(0.5),
-        borderRadius: BorderRadius.circular(9),
-        border: borderColor != null
-            ? Border.all(color: borderColor!, width: 2.5)
-            : null,
-      ),
-      child: CustomPaint(
-        painter: _DashedBorderPainter(
-          color: canPlay
-              ? AppColors.cellHighlight.withOpacity(0.85)
-              : AppColors.cellBorder.withOpacity(0.4),
+  Widget build(BuildContext context) {
+    final isEmpty = cell == null;
+
+    Color borderColor = Colors.white.withValues(alpha: canPlace ? 0.6 : 0.1);
+    if (isLastPlaced) borderColor = const Color(0xFFF5C842);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: canPlace
+              ? const Color(0x33FFFFFF)
+              : const Color(0x44546E9F),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1.2),
         ),
-        child: Center(
-          child: Icon(
-            Icons.add,
-            color: canPlay
-                ? Colors.white.withOpacity(0.9)
-                : Colors.white.withOpacity(0.25),
-            size: 22),
-        ),
+        child: isEmpty
+            ? Center(
+                child: Icon(
+                  Icons.add,
+                  color: canPlace ? Colors.white70 : Colors.white24,
+                  size: 18,
+                ),
+              )
+            : BoardCardWidget(
+                cardImage:   cardImage,
+                isStarOwner: isStarOwner,
+                isFlipped:   isFlipped,
+              ),
       ),
-    ),
-  );
-}
- 
-class _DashedBorderPainter extends CustomPainter {
-  final Color color;
-  const _DashedBorderPainter({required this.color});
- 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = color..strokeWidth = 1.5..style = PaintingStyle.stroke;
-    final path = Path()..addRRect(
-        RRect.fromLTRBR(1, 1, size.width - 1, size.height - 1, const Radius.circular(9)));
-    const dash = 6.0, gap = 4.5;
-    for (final m in path.computeMetrics()) {
-      double d = 0; bool draw = true;
-      while (d < m.length) {
-        final len = draw ? dash : gap;
-        if (draw) canvas.drawPath(m.extractPath(d, d + len), p);
-        d += len; draw = !draw;
-      }
-    }
+    );
   }
- 
-  @override
-  bool shouldRepaint(_DashedBorderPainter old) => old.color != color;
 }

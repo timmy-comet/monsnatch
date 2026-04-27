@@ -14,15 +14,12 @@ class RoomModel extends RoomEntity {
   });
  
   factory RoomModel.fromJson(Map<String, dynamic> json) {
-    // game is an array — current match = game.last
-    List<GameStateModel>? gameList;
+    GameStateModel? game;
     final rawGame = json['game'];
-    if (rawGame is List && rawGame.isNotEmpty) {
-      gameList = rawGame
-          .map((g) => GameStateModel.fromJson(g as Map<String, dynamic>))
-          .toList();
+    if (rawGame is Map<String, dynamic>) {
+      game = GameStateModel.fromJson(rawGame);
     }
- 
+
     final rawVotes = json['playAgainVotes'] as List<dynamic>?;
  
     return RoomModel(
@@ -31,7 +28,7 @@ class RoomModel extends RoomEntity {
       status:           json['status']    as String,
       player1:          json['player1']   as String?,
       player2:          json['player2']   as String?,
-      game:             gameList,
+      game:             game,
       playAgainVotes:   rawVotes?.cast<String>(),
       leftBy:           json['leftBy']    as String?,
     );

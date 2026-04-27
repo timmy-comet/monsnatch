@@ -7,10 +7,10 @@ class RoomEntity extends Equatable {
   final String  status;      // 'available' | 'unavailable' | 'done'
   final String? player1;
   final String? player2;
-  final List<GameStateEntity>? game; // array — current match is game.last
+  final GameStateEntity? game;
   final List<String>? playAgainVotes;
   final String?  leftBy;     // set when a player explicitly leaves
- 
+
   const RoomEntity({
     required this.code,
     required this.createdBy,
@@ -21,14 +21,12 @@ class RoomEntity extends Equatable {
     this.playAgainVotes,
     this.leftBy,
   });
- 
+
   bool get hasOpponent   => player2 != null;
-  bool get isGameStarted => game != null && game!.isNotEmpty;
+  bool get isGameStarted => game != null;
   bool get isOpponentLeft => leftBy != null;
- 
-  /// The current/latest match — ALWAYS use this, never game[0]
-  GameStateEntity? get currentGame =>
-      (game != null && game!.isNotEmpty) ? game!.last : null;
+
+  GameStateEntity? get currentGame => game;
  
   @override
   List<Object?> get props => [code, createdBy, status, player1, player2, game, leftBy];

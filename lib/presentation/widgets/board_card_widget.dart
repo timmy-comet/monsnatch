@@ -1,104 +1,122 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
-import '../../domain/entities/card_entity.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-class BoardCardWidget extends StatelessWidget {
-  final int         cardId;
-  final CardEntity? card;       // may be null if catalog not yet loaded
-  final bool        isStarOwner;
-  final Color?      borderColor;
+const String _starAsset = 'assets/images/ui/star.svg';
+const String _moonAsset = 'assets/images/ui/moon.svg';
+
+class BoardCardWidget extends StatefulWidget {
+  final String? cardImage;
+  final bool    isStarOwner;
+  final bool    isFlipped;
 
   const BoardCardWidget({
     super.key,
-    required this.cardId,
-    required this.card,
+    required this.cardImage,
     required this.isStarOwner,
-    this.borderColor,
+    required this.isFlipped,
   });
 
   @override
+  State<BoardCardWidget> createState() => _BoardCardState();
+}
+
+class _BoardCardState extends State<BoardCardWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double>   _flip;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 450));
+    _flip = Tween<double>(begin: 0, end: pi)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void didUpdateWidget(BoardCardWidget old) {
+    super.didUpdateWidget(old);
+    if (widget.isFlipped && !old.isFlipped) {
+      _ctrl.forward(from: 0);
+    } else if (widget.isStarOwner != old.isStarOwner) {
+      _ctrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final tokenColor = isStarOwner
-        ? AppColors.starFaction
-        : AppColors.moonFaction;
-    final tokenIcon  = isStarOwner
-        ? Icons.star_rounded
-        : Icons.nightlight_round;
+    return AnimatedBuilder(
+      animation: _flip,
+      builder: (_, __) {
+        final angle = _flip.value;
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.rotationY(angle < pi / 2 ? angle : angle - pi),
+          child: _CardFace(
+            cardImage:   widget.cardImage,
+            isStarOwner: widget.isStarOwner,
+          ),
+        );
+      },
+    );
+  }
+}
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(9),
-        border: borderColor != null
-            ? Border.all(color: borderColor!, width: 2.5)
-            : null,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(
-            borderColor != null ? 6.5 : 9),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Card art
-            Image.asset(
-              card?.imageAsset ?? 'assets/images/cards/card_$cardId.png',
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: AppColors.gridCellBg,
-                child: Center(
-                  child: Text(
-                    card?.name ?? '#$cardId',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 8),
-                  ),
-                ),
-              ),
-            ),
+class _CardFace extends StatelessWidget {
+  final String? cardImage;
+  final bool    isStarOwner;
+  const _CardFace({required this.cardImage, required this.isStarOwner});
 
-            // Faction token badge — top-right
-            Positioned(
-              top: 3, right: 3,
-              child: Container(
-                width: 18, height: 18,
-                decoration: BoxDecoration(
-                  color:  tokenColor,
-                  shape:  BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                        color:      tokenColor.withOpacity(0.5),
-                        blurRadius: 4)
-                  ],
-                ),
-                child: Icon(tokenIcon,
-                    color: Colors.white, size: 11),
-              ),
-            ),
-
-            // Power badge — bottom-left
-            if (card != null)
-              Positioned(
-                bottom: 3, left: 3,
-                child: Container(
-                  width: 20, height: 20,
-                  decoration: BoxDecoration(
-                    color:  Colors.white.withOpacity(0.85),
-                    shape:  BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${card!.power}',
-                      style: TextStyle(
-                        fontSize:   9,
-                        fontWeight: FontWeight.w900,
-                        color:      tokenColor,
-                      ),
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: cardImage != null
+                ? Image.asset(
+                    cardImage!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: Colors.black26,
+                      child: const Icon(Icons.broken_image,
+                          color: Colors.white24),
                     ),
-                  ),
-                ),
-              ),
-          ],
+                  )
+                : Container(color: Colors.black26),
+          ),
         ),
-      ),
+        Positioned(
+          top: 2,
+          right: 2,
+          child: Container(
+            width: 16,
+            height: 16,
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: isStarOwner
+                  ? const Color(0xFFF5C842)
+                  : const Color(0xFF3949AB),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4), blurRadius: 4),
+              ],
+            ),
+            child: SvgPicture.asset(isStarOwner ? _starAsset : _moonAsset),
+          ),
+        ),
+      ],
     );
   }
 }

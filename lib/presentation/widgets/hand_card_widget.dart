@@ -1,93 +1,90 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
 import '../../domain/entities/card_entity.dart';
 
 class HandCardWidget extends StatelessWidget {
-  final int         cardId;
   final CardEntity? card;
+  final int         cardId;
+  final bool        isFocused;
   final bool        isSelected;
-  final bool        enabled;
-  final VoidCallback? onTap;
+  final bool        isUsed;
+  final double      width, height;
 
   const HandCardWidget({
     super.key,
-    required this.cardId,
     required this.card,
-    required this.isSelected,
-    required this.enabled,
-    this.onTap,
+    required this.cardId,
+    this.isFocused  = false,
+    this.isSelected = false,
+    this.isUsed     = false,
+    this.width  = 68,
+    this.height = 96,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width:  60,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: isSelected
-              ? Border.all(color: AppColors.cellHighlight, width: 2.5)
-              : Border.all(color: Colors.transparent, width: 2.5),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color:      AppColors.cellHighlight.withOpacity(0.5),
-                    blurRadius: 10,
-                    spreadRadius: 1,
+    return Opacity(
+      opacity: isUsed ? 0.4 : 1.0,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width:  width,
+            height: height,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: isSelected
+                  ? Border.all(color: const Color(0xFFF5C842), width: 2.5)
+                  : Border.all(
+                      color: Colors.white.withValues(alpha: 0.3), width: 1),
+              boxShadow: isFocused
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFFF5C842).withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      )
+                    ]
+                  : [],
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: card != null
+                ? Image.asset(
+                    card!.imageAsset,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _placeholder(),
                   )
-                ]
-              : [
-                  const BoxShadow(
-                      color: Colors.black26, blurRadius: 4)
-                ],
-        ),
-        child: Opacity(
-          opacity: enabled ? 1.0 : 0.5,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Stack(children: [
-              Image.asset(
-                card?.imageAsset ??
-                    'assets/images/cards/card_$cardId.png',
-                width: 60, height: 84, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 60, height: 84,
-                  color: AppColors.gridCellBg,
-                  child: Center(
-                    child: Text(
-                      card?.name ?? '#$cardId',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 7),
-                    ),
-                  ),
-                ),
-              ),
-              // Power badge
-              if (card != null)
-                Positioned(
-                  bottom: 3, left: 3,
-                  child: Container(
-                    width: 18, height: 18,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.85),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text('${card!.power}',
-                          style: const TextStyle(
-                            fontSize: 8, fontWeight: FontWeight.w900,
-                            color: AppColors.primaryText,
-                          )),
-                    ),
-                  ),
-                ),
-            ]),
+                : _placeholder(),
           ),
-        ),
+          if (card != null)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                width:  20,
+                height: 20,
+                decoration: const BoxDecoration(
+                    color: Colors.white, shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: Text('${card!.power}',
+                    style: const TextStyle(
+                      color:      Color(0xFF333333),
+                      fontSize:   9,
+                      fontWeight: FontWeight.w900,
+                    )),
+              ),
+            ),
+        ],
       ),
     );
   }
+
+  Widget _placeholder() => Container(
+        color: const Color(0xFF7080B8),
+        alignment: Alignment.center,
+        child: Text(
+          card?.name ?? '#$cardId',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white, fontSize: 8),
+        ),
+      );
 }

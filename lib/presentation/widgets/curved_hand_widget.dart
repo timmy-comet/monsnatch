@@ -3,23 +3,22 @@ import '../../domain/entities/card_entity.dart';
 import 'hand_card_widget.dart';
 
 class CurvedHandWidget extends StatefulWidget {
-  final List<CardEntity> cards;
-  final int focusIndex;
-  final int? selectedIndex;
-  final bool isPlayerTurn; // Reintegrated check
-  final ValueChanged<int> onSwipedTo;
-  final ValueChanged<int> onCardTapped;
-  final VoidCallback onLensTapped;
+  /// Full hand (active + used) so positions stay stable as cards are played.
+  final List<int>            cardIds;
+  final Map<int, CardEntity> catalog;
+  final Set<int>             usedCardIds;
+  final int?                 selectedCardId;
+  final bool                 isPlayerTurn;
+  final ValueChanged<int>    onCardTapped; // emits cardId
 
   const CurvedHandWidget({
     super.key,
-    required this.cards,
-    required this.focusIndex,
-    required this.selectedIndex,
+    required this.cardIds,
+    required this.catalog,
+    required this.usedCardIds,
+    required this.selectedCardId,
     required this.isPlayerTurn,
-    required this.onSwipedTo,
     required this.onCardTapped,
-    required this.onLensTapped,
   });
 
   @override
@@ -30,90 +29,88 @@ class _CurvedHandState extends State<CurvedHandWidget> {
   late int _focus;
   double _dragStart = 0;
 
-  static const double _cardGap = 65;
-  static const double _arcDepth = 6.0;
+  static const double _cardW        = 69;
+  static const double _cardH        = 98;
+  static const double _cardGap      = 65;
+  static const double _arcDepth     = 6.0;
   static const double _rotationStep = 0.08;
-  static const double _focusScale = 1.6;
+  static const double _focusScale   = 1.6;
   static const Duration _animDuration = Duration(milliseconds: 350);
 
   @override
   void initState() {
     super.initState();
-    // Default focus logic: Right-hand preference
-    if (widget.cards.length >= 5) {
-      _focus = (widget.cards.length ~/ 2) + 1;
-    } else {
-      _focus = (widget.cards.length - 1).clamp(0, 99).toInt();
-    }
+    _focus = _initialFocus(widget.cardIds.length);
   }
 
   @override
   void didUpdateWidget(CurvedHandWidget old) {
     super.didUpdateWidget(old);
-    
-    // PHASE 3 AUDIT: Refocus logic when a card is placed
-    if (widget.cards.length < old.cards.length) {
-      _handleRefocusAfterPlacement();
+    if (widget.cardIds.length != old.cardIds.length) {
+      setState(() {
+        _focus = _focus.clamp(0, (widget.cardIds.length - 1).clamp(0, 999));
+      });
     }
   }
 
-  void _handleRefocusAfterPlacement() {
-    setState(() {
-      // Clamping keeps focus on the card that slid into the current index (the Right neighbor)
-      _focus = _focus.clamp(0, (widget.cards.length - 1).clamp(0, 999));
-    });
-    widget.onSwipedTo(_focus);
+  int _initialFocus(int n) {
+    if (n == 0) return 0;
+    if (n >= 5) return (n ~/ 2) + 1;
+    return (n - 1).clamp(0, 99);
   }
 
   void _shiftFocus(int delta) {
-    // SECURITY GATE: Block swiping if it's not the player's turn
     if (!widget.isPlayerTurn) return;
-
-    final next = (_focus + delta).clamp(0, widget.cards.length - 1);
+    final next = (_focus + delta).clamp(0, widget.cardIds.length - 1);
     if (next == _focus) return;
     setState(() => _focus = next);
-    widget.onSwipedTo(next);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.cards.isEmpty) return const SizedBox(height: 220);
+    if (widget.cardIds.isEmpty) return const SizedBox(height: 220);
 
-    final sortedIndices = List.generate(widget.cards.length, (i) => i)
+    // Render order: outer cards first so the focused one stays on top.
+    final sortedIndices = List.generate(widget.cardIds.length, (i) => i)
       ..sort((a, b) {
         final da = (a - _focus).abs();
         final db = (b - _focus).abs();
-        return db.compareTo(da); 
+        return db.compareTo(da);
       });
 
     return GestureDetector(
-      // SECURITY GATE: Block drag interactions
-      onHorizontalDragStart: (d) => widget.isPlayerTurn ? _dragStart = d.globalPosition.dx : null,
+      onHorizontalDragStart: (d) {
+        if (widget.isPlayerTurn) _dragStart = d.globalPosition.dx;
+      },
       onHorizontalDragUpdate: (d) {
         if (!widget.isPlayerTurn) return;
         final diff = d.globalPosition.dx - _dragStart;
         if (diff.abs() > 45) {
           _shiftFocus(diff < 0 ? 1 : -1);
-          _dragStart = d.globalPosition.dx; 
+          _dragStart = d.globalPosition.dx;
         }
       },
       child: SizedBox(
         height: 220,
         child: Stack(
-          alignment: Alignment.bottomCenter,
-          clipBehavior: Clip.none,
-          children: sortedIndices.map((i) => _buildAnimatedCard(i)).toList(),
+          alignment:     Alignment.bottomCenter,
+          clipBehavior:  Clip.none,
+          children: sortedIndices.map(_buildAnimatedCard).toList(),
         ),
       ),
     );
   }
 
   Widget _buildAnimatedCard(int i) {
-    final dist = i - _focus;
+    final dist    = i - _focus;
     final isFocus = dist == 0;
-    
+    final cardId  = widget.cardIds[i];
+    final card    = widget.catalog[cardId];
+    final isUsed  = widget.usedCardIds.contains(cardId);
+    final isSel   = widget.selectedCardId == cardId;
+
     return AnimatedPositioned(
-      key: ValueKey(widget.cards[i].id),
+      key: ValueKey(cardId),
       duration: _animDuration,
       curve: Curves.easeOutCubic,
       bottom: 30,
@@ -134,16 +131,21 @@ class _CurvedHandState extends State<CurvedHandWidget> {
           child: Center(
             child: GestureDetector(
               onTap: () {
-                // SECURITY GATE: Block card tapping/selection
-                if (!widget.isPlayerTurn) return;
-                isFocus ? widget.onCardTapped(i) : _shiftFocus(dist);
+                if (!widget.isPlayerTurn || isUsed) return;
+                if (isFocus) {
+                  widget.onCardTapped(cardId);
+                } else {
+                  _shiftFocus(dist);
+                }
               },
               child: HandCardWidget(
-                cardId: i,
-                card: widget.cards[i],
-                isSelected: widget.selectedIndex == i,
-                enabled: widget.isPlayerTurn,
-                onTap: isFocus ? (() => widget.onCardTapped(i)) : null,
+                cardId:     cardId,
+                card:       card,
+                isFocused:  isFocus,
+                isSelected: isSel,
+                isUsed:     isUsed,
+                width:      _cardW,
+                height:     _cardH,
               ),
             ),
           ),
