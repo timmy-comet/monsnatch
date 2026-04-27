@@ -27,7 +27,11 @@ class UserRepositoryImpl implements UserRepository {
     try {
       final response = await _remote.register(username);
       await _local.saveAuth(
-        uid: response.uid, username: response.username, idToken: response.idToken);
+        uid: response.uid,
+        username: response.username,
+        idToken: response.idToken,
+        refreshToken: response.refreshToken,
+      );
       return UserEntity(uid: response.uid, username: response.username);
     } on ServerException catch (e) {
       // 409 = username taken; surface the server message directly

@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 abstract class UserRemoteDataSource {
   Future<RegisterResponse> register(String username);
   Future<UserModel>        getUserById(String uid);
+  Future<TokenBundle>      refresh(String refreshToken);
 }
 
 class UserRemoteDataSourceImpl implements UserRemoteDataSource {
@@ -22,6 +23,20 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       return RegisterResponse.fromJson(res.data!);
     } on DioException catch (e) {
       throw ServerException(_err(e) ?? 'Registration failed',
+          statusCode: e.response?.statusCode);
+    }
+  }
+
+  @override
+  Future<TokenBundle> refresh(String refreshToken) async {
+    try {
+      final res = await _client.postPublic<Map<String, dynamic>>(
+        '/refresh',
+        data: {'refreshToken': refreshToken},
+      );
+      return TokenBundle.fromJson(res.data!);
+    } on DioException catch (e) {
+      throw ServerException(_err(e) ?? 'Refresh failed',
           statusCode: e.response?.statusCode);
     }
   }

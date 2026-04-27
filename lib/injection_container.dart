@@ -41,7 +41,7 @@ void initDependencies() {
   sl.registerLazySingleton<UserRepository>(
       () => UserRepositoryImpl(sl(), sl()));
   sl.registerLazySingleton<RoomRepository>(
-      () => RoomRepositoryImpl(sl(), sl()));
+      () => RoomRepositoryImpl(sl(), sl(), sl()));
 
   // ── Use Cases ──────────────────────────────────────────────────────────
   sl.registerLazySingleton(() => GetUser(sl()));

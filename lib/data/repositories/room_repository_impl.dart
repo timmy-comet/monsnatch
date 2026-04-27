@@ -6,12 +6,32 @@ import '../../domain/entities/room_entity.dart';
 import '../../domain/repositories/room_repository.dart';
 import '../datasources/auth_local_datasource.dart';
 import '../datasources/room_remote_datasource.dart';
+import '../datasources/user_remote_datasource.dart';
 
 class RoomRepositoryImpl implements RoomRepository {
   final RoomRemoteDataSource _remote;
   final AuthLocalDataSource  _auth;
+  final UserRemoteDataSource _userRemote;
 
-  const RoomRepositoryImpl(this._remote, this._auth);
+  const RoomRepositoryImpl(this._remote, this._auth, this._userRemote);
+
+  Future<String?> _ensureFreshIdToken() async {
+    final stored = await _auth.getIdToken();
+    if (stored != null) return stored;
+    final refresh = await _auth.getRefreshToken();
+    if (refresh == null) return null;
+    try {
+      final tokens = await _userRemote.refresh(refresh);
+      await _auth.saveTokens(
+        idToken:      tokens.idToken,
+        refreshToken: tokens.refreshToken,
+      );
+      return tokens.idToken;
+    } catch (_) {
+      await _auth.clearAuth();
+      return null;
+    }
+  }
 
   @override
   Future<Either<Failure, RoomEntity>> createRoom() =>
@@ -55,7 +75,7 @@ class RoomRepositoryImpl implements RoomRepository {
 
   @override
   Stream<Either<Failure, RoomEntity>> watchRoom(String code) async* {
-    final token = await _auth.getIdToken();
+    final token = await _ensureFreshIdToken();
     if (token == null) {
       yield left(const AuthFailure('Session expired. Please re-register.'));
       return;

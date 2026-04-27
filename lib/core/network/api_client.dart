@@ -14,7 +14,7 @@ class ApiClient {
       receiveTimeout:  const Duration(seconds: 15),
       contentType:     'application/json',
     ));
-    _dio.interceptors.add(_AuthInterceptor(_auth));
+    _dio.interceptors.add(_AuthInterceptor(_auth, _refresh));
   }
 
   Future<Response<T>> get<T>(String path) => _dio.get(path);
@@ -22,51 +22,125 @@ class ApiClient {
   Future<Response<T>> post<T>(String path, {dynamic data}) =>
       _dio.post(path, data: data);
 
-  /// Public — used for register (no auth header needed)
+  /// Public — used for register/refresh (no auth header needed)
   Future<Response<T>> postPublic<T>(String path, {dynamic data}) =>
       _dio.post(path, data: data,
           options: Options(headers: {'skipAuth': true}));
+
+  // Single in-flight refresh so concurrent requests don't pile on /refresh.
+  Future<bool>? _inFlightRefresh;
+
+  Future<bool> _refresh() {
+    final pending = _inFlightRefresh;
+    if (pending != null) return pending;
+    final fut = _doRefresh();
+    _inFlightRefresh = fut;
+    return fut.whenComplete(() => _inFlightRefresh = null);
+  }
+
+  Future<bool> _doRefresh() async {
+    final rt = await _auth.getRefreshToken();
+    if (rt == null) return false;
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/refresh',
+        data: {'refreshToken': rt},
+        options: Options(headers: {'skipAuth': true}),
+      );
+      final data = res.data!;
+      await _auth.saveTokens(
+        idToken:      data['idToken']      as String,
+        refreshToken: data['refreshToken'] as String,
+      );
+      return true;
+    } on DioException {
+      await _auth.clearAuth();
+      return false;
+    }
+  }
 }
 
 class _AuthInterceptor extends Interceptor {
   final AuthLocalDataSource _auth;
-  _AuthInterceptor(this._auth);
+  final Future<bool> Function() _refresh;
+  _AuthInterceptor(this._auth, this._refresh);
+
+  bool _isPublic(RequestOptions options) {
+    if (options.headers.remove('skipAuth') != null) return true;
+    return options.path.contains('/register') ||
+           options.path.contains('/refresh')  ||
+           options.path.contains('/health');
+  }
 
   @override
   Future<void> onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
-    
-    // Phase 1: Research - Registration is the only public endpoint except health
-    final bool isPublicEndpoint = options.path.contains('/register') || 
-                                  options.path.contains('/health');
 
-    if (!isPublicEndpoint) {
-      final token = await _auth.getIdToken(); // Phase 2: Retrieve from Local DS
-      if (token != null) {
-        options.headers['Authorization'] = 'Bearer $token';
-      } else {
-        // Phase 3: Audit - Handle missing token before request leaves
-        return handler.reject(DioException(
-          requestOptions: options,
-          error: const AuthException('No authentication token found.'),
-        ));
+    if (_isPublic(options)) return handler.next(options);
+
+    var token = await _auth.getIdToken();
+    if (token == null) {
+      // Stale or missing — try a refresh before failing.
+      if (await _refresh()) {
+        token = await _auth.getIdToken();
       }
     }
-    
+
+    if (token == null) {
+      return handler.reject(DioException(
+        requestOptions: options,
+        error: const AuthException('No authentication token found.'),
+      ));
+    }
+
+    options.headers['Authorization'] = 'Bearer $token';
     return handler.next(options);
   }
 
   @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
+  Future<void> onError(
+      DioException err, ErrorInterceptorHandler handler) async {
     final status = err.response?.statusCode;
-    if (status == 401) {
-      // Token expired — caller gets AuthException; UserBloc can clear & re-prompt
-      handler.reject(DioException(
-        requestOptions: err.requestOptions,
+    final req = err.requestOptions;
+    final alreadyRetried = req.extra['_retried'] == true;
+
+    // 401 on a non-public request: try one refresh + retry, then surface auth error.
+    if (status == 401 && !_isPublic(req) && !alreadyRetried) {
+      if (await _refresh()) {
+        final token = await _auth.getIdToken();
+        if (token != null) {
+          final retryOpts = Options(
+            method: req.method,
+            headers: {...req.headers, 'Authorization': 'Bearer $token'},
+            contentType: req.contentType,
+            responseType: req.responseType,
+          );
+          try {
+            final resp = await Dio(BaseOptions(baseUrl: req.baseUrl)).request(
+              req.path,
+              data: req.data,
+              queryParameters: req.queryParameters,
+              options: retryOpts..extra = {...req.extra, '_retried': true},
+            );
+            return handler.resolve(resp);
+          } on DioException catch (e) {
+            return handler.reject(e);
+          }
+        }
+      }
+      return handler.reject(DioException(
+        requestOptions: req,
         error: const AuthException('Session expired. Please re-enter your name.'),
       ));
-      return;
     }
+
+    if (status == 401) {
+      return handler.reject(DioException(
+        requestOptions: req,
+        error: const AuthException('Session expired. Please re-enter your name.'),
+      ));
+    }
+
     handler.next(err);
   }
 }
