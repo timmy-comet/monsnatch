@@ -60,7 +60,6 @@ class _CurvedHandState extends State<CurvedHandWidget> {
   }
 
   void _shiftFocus(int delta) {
-    if (!widget.isPlayerTurn) return;
     final next = (_focus + delta).clamp(0, widget.cardIds.length - 1);
     if (next == _focus) return;
     setState(() => _focus = next);
@@ -80,10 +79,9 @@ class _CurvedHandState extends State<CurvedHandWidget> {
 
     return GestureDetector(
       onHorizontalDragStart: (d) {
-        if (widget.isPlayerTurn) _dragStart = d.globalPosition.dx;
+        _dragStart = d.globalPosition.dx;
       },
       onHorizontalDragUpdate: (d) {
-        if (!widget.isPlayerTurn) return;
         final diff = d.globalPosition.dx - _dragStart;
         if (diff.abs() > 45) {
           _shiftFocus(diff < 0 ? 1 : -1);
@@ -131,12 +129,12 @@ class _CurvedHandState extends State<CurvedHandWidget> {
           child: Center(
             child: GestureDetector(
               onTap: () {
-                if (!widget.isPlayerTurn || isUsed) return;
-                if (isFocus) {
-                  widget.onCardTapped(cardId);
-                } else {
+                if (!isFocus) {
                   _shiftFocus(dist);
+                  return;
                 }
+                if (!widget.isPlayerTurn || isUsed) return;
+                widget.onCardTapped(cardId);
               },
               child: HandCardWidget(
                 cardId:     cardId,
