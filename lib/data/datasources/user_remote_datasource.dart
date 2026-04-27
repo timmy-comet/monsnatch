@@ -5,7 +5,7 @@ import '../models/user_model.dart';
 
 abstract class UserRemoteDataSource {
   Future<RegisterResponse> register(String username);
-  Future<UserModel>        getUser(String uid);
+  Future<UserModel>        getUserById(String uid);
 }
 
 class UserRemoteDataSourceImpl implements UserRemoteDataSource {
@@ -21,27 +21,23 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       );
       return RegisterResponse.fromJson(res.data!);
     } on DioException catch (e) {
-      throw ServerException(
-        _extractError(e) ?? 'Registration failed',
-        statusCode: e.response?.statusCode,
-      );
+      throw ServerException(_err(e) ?? 'Registration failed',
+          statusCode: e.response?.statusCode);
     }
   }
 
   @override
-  Future<UserModel> getUser(String uid) async {
+  Future<UserModel> getUserById(String uid) async {
     try {
       final res = await _client.get<Map<String, dynamic>>('/users/$uid');
       return UserModel.fromJson(res.data!);
     } on DioException catch (e) {
-      throw ServerException(
-        _extractError(e) ?? 'User not found',
-        statusCode: e.response?.statusCode,
-      );
+      throw ServerException(_err(e) ?? 'User not found',
+          statusCode: e.response?.statusCode);
     }
   }
-
-  String? _extractError(DioException e) {
+ 
+  String? _err(DioException e) {
     try { return (e.response?.data as Map?)?['error'] as String?; } catch (_) { return null; }
   }
 }

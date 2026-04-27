@@ -10,6 +10,7 @@ abstract class RoomRemoteDataSource {
   Future<RoomModel> getRoom(String code);
   Future<RoomModel> joinRoom(String code);
   Future<RoomModel> startRoom(String code);
+  Future<RoomModel> leaveRoom(String code);
   Future<RoomModel> playCard({
     required String code,
     required int    cellIndex,
@@ -29,103 +30,65 @@ class RoomRemoteDataSourceImpl implements RoomRemoteDataSource {
   // ── REST ─────────────────────────────────────────────────────────────────
 
   @override
-  Future<RoomModel> createRoom() async {
-    try {
-      final res = await _client.post<Map<String, dynamic>>('/rooms', data: {});
-      return RoomModel.fromJson(res.data!);
-    } on DioException catch (e) {
-      throw _mapError(e, 'Failed to create room');
-    }
-  }
-
+  Future<RoomModel> createRoom() => _post('/rooms', {});
+ 
   @override
   Future<RoomModel> getRoom(String code) async {
     try {
       final res = await _client.get<Map<String, dynamic>>('/rooms/$code');
       return RoomModel.fromJson(res.data!);
-    } on DioException catch (e) {
-      throw _mapError(e, 'Room not found');
-    }
+    } on DioException catch (e) { throw _map(e, 'Room not found'); }
   }
-
+ 
   @override
-  Future<RoomModel> joinRoom(String code) async {
-    try {
-      final res = await _client
-          .post<Map<String, dynamic>>('/rooms/$code/join', data: {});
-      return RoomModel.fromJson(res.data!);
-    } on DioException catch (e) {
-      throw _mapError(e, 'Failed to join room');
-    }
-  }
-
-  /// POST /rooms/:code/start — host only.
+  Future<RoomModel> joinRoom(String code)   => _post('/rooms/$code/join',  {});
+ 
   @override
-  Future<RoomModel> startRoom(String code) async {
-    try {
-      final res = await _client
-          .post<Map<String, dynamic>>('/rooms/$code/start', data: {});
-      return RoomModel.fromJson(res.data!);
-    } on DioException catch (e) {
-      throw _mapError(e, 'Failed to start game');
-    }
-  }
-
-  /// POST /rooms/:code/play — { cellIndex, cardId }.
-  /// Do NOT update local state after this returns; wait for the WS echo.
+  Future<RoomModel> startRoom(String code)  => _post('/rooms/$code/start', {});
+ 
+  @override
+  Future<RoomModel> leaveRoom(String code)  => _post('/rooms/$code/leave', {});
+ 
   @override
   Future<RoomModel> playCard({
     required String code,
     required int    cellIndex,
     required int    cardId,
-  }) async {
-    try {
-      final res = await _client.post<Map<String, dynamic>>(
-        '/rooms/$code/play',
-        data: {'cellIndex': cellIndex, 'cardId': cardId},
-      );
-      return RoomModel.fromJson(res.data!);
-    } on DioException catch (e) {
-      throw _mapError(e, 'Move rejected');
-    }
-  }
-
-  /// GET /cards — full card catalog (12 cards), fetch once per session.
+  }) => _post('/rooms/$code/play', {'cellIndex': cellIndex, 'cardId': cardId});
+ 
+  /// GET /cards — full 12-card catalog, static (fetch once per session)
   @override
   Future<List<CardModel>> getCards() async {
     try {
       final res = await _client.get<List<dynamic>>('/cards');
       return (res.data ?? [])
-          .map((json) => CardModel.fromJson(json as Map<String, dynamic>))
+          .map((j) => CardModel.fromJson(j as Map<String, dynamic>))
           .toList();
-    } on DioException catch (e) {
-      throw _mapError(e, 'Failed to load cards');
-    }
+    } on DioException catch (e) { throw _map(e, 'Failed to load card catalog'); }
   }
-
-  // ── WebSocket ─────────────────────────────────────────────────────────────
-
+ 
+  /// WS — streams room_update messages; all other messages ignored
   @override
-  Stream<RoomModel> watchRoom(String code, String token) {
-    return _ws
-        .connect(code, token)
-        .where((msg) => msg['type'] == 'room_update')
-        .map((msg) {
-          final roomJson = msg['room'] as Map<String, dynamic>;
-          return RoomModel.fromJson(roomJson);
-        });
-  }
-
+  Stream<RoomModel> watchRoom(String code, String token) =>
+      _ws.connect(code, token)
+          .where((msg) => msg['type'] == 'room_update')
+          .map((msg) => RoomModel.fromJson(msg['room'] as Map<String, dynamic>));
+ 
   @override
   void stopWatching() => _ws.disconnect();
-
-  // ── Error mapping ─────────────────────────────────────────────────────────
-
-  ServerException _mapError(DioException e, String fallback) {
-    String? msg;
+ 
+  // ── helpers ───────────────────────────────────────────────────────────────
+ 
+  Future<RoomModel> _post(String path, Object body) async {
     try {
-      msg = (e.response?.data as Map?)?['error'] as String?;
-    } catch (_) {}
+      final res = await _client.post<Map<String, dynamic>>(path, data: body);
+      return RoomModel.fromJson(res.data!);
+    } on DioException catch (e) { throw _map(e, 'Request failed'); }
+  }
+ 
+  ServerException _map(DioException e, String fallback) {
+    String? msg;
+    try { msg = (e.response?.data as Map?)?['error'] as String?; } catch (_) {}
     return ServerException(msg ?? fallback, statusCode: e.response?.statusCode);
   }
 }

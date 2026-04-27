@@ -1,163 +1,141 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/errors/failures.dart';
 import '../../../domain/usecases/get_cards.dart';
 import '../../../domain/usecases/get_user_by_id.dart';
 import '../../../domain/usecases/play_card.dart';
-import '../../../domain/usecases/watch_room.dart';
 import 'game_event.dart';
 import 'game_state.dart';
-
+ 
 class GameBloc extends Bloc<GameEvent, GameBlocState> {
-  final GetCards       _getCards;
-  final GetUserById    _getUserById;
-  final PlayCard       _playCard;
-  final WatchRoom      _watchRoom;
-
+  final GetCards    _getCards;
+  final GetUserById _getUserById;
+  final PlayCard    _playCard;
+ 
   Timer? _countdownTimer;
-  StreamSubscription<dynamic>? _wsSub;
-
+ 
   GameBloc({
-    required GetCards       getCards,
-    required GetUserById    getUserById,
-    required PlayCard       playCard,
-    required WatchRoom      watchRoom,
+    required GetCards    getCards,
+    required GetUserById getUserById,
+    required PlayCard    playCard,
   })  : _getCards    = getCards,
         _getUserById = getUserById,
         _playCard    = playCard,
-        _watchRoom   = watchRoom,
         super(const GameBlocState()) {
-    on<GameInitialized>(_onInitialized);
-    on<GameRoomUpdated>(_onRoomUpdated);
-    on<GameCardTapped>(_onCardTapped);
-    on<GameCellTapped>(_onCellTapped);
-    on<GameTimerTick>(_onTimerTick);
-    on<GameExited>(_onExited);
+    on<GameInitialized>  (_onInitialized);
+    on<GameRoomUpdated>  (_onRoomUpdated);
+    on<GameCardTapped>   (_onCardTapped);
+    on<GameCellTapped>   (_onCellTapped);
+    on<GameTimerTick>    (_onTimerTick);
   }
-
+ 
   // ── Handlers ──────────────────────────────────────────────────────────────
-
-  Future<void> _onInitialized(
-      GameInitialized event, Emitter<GameBlocState> emit) async {
+ 
+  Future<void> _onInitialized(GameInitialized event, Emitter<GameBlocState> emit) async {
     emit(state.copyWith(
       room:  event.room,
       myUid: event.myUid,
       phase: GamePhase.playing,
     ));
-
-    // 1. Fetch card catalog
+ 
+    // 1. Load card catalog from GET /cards
     final cardsResult = await _getCards();
     cardsResult.fold(
-      (f) => emit(state.copyWith(errorMessage: 'Cards load failed: ${f.message}')),
-      (cards) => emit(state.copyWith(catalog: cards)),
+      (f) => emit(state.copyWith(errorMessage: 'Card catalog: ${f.message}')),
+      (cards) => emit(state.copyWith(
+        catalog: {for (final c in cards) c.id: c},
+      )),
     );
-
-    // 2. Fetch opponent username
-    final opponentUid = event.room.player1 == event.myUid
+ 
+    // 2. Load opponent username
+    final oppUid = event.room.player1 == event.myUid
         ? event.room.player2
         : event.room.player1;
-    if (opponentUid != null) {
-      final userResult = await _getUserById(opponentUid);
+    if (oppUid != null) {
+      final userResult = await _getUserById(oppUid);
       userResult.fold(
         (_) {},
-        (user) => emit(state.copyWith(opponentUsername: user.username)),
+        (u) => emit(state.copyWith(opponentUsername: u.username)),
       );
     }
-
-    // 3. Open WebSocket — replace state on every update
-    _listenToRoom(event.room.code);
-
-    // 4. Start 500ms countdown timer
-    _startCountdownTimer();
+ 
+    // 3. Start countdown timer (500ms ticks)
+    _startCountdown();
   }
-
-  Future<void> _onRoomUpdated(
-      GameRoomUpdated event, Emitter<GameBlocState> emit) async {
+ 
+  void _onRoomUpdated(GameRoomUpdated event, Emitter<GameBlocState> emit) {
     final newPhase = event.room.status == 'done'
         ? GamePhase.done
         : GamePhase.playing;
-
     emit(state.copyWith(
       room:         event.room,
       phase:        newPhase,
-      isSubmitting: false,   // unlock UI on every server ack
+      isSubmitting: false,  // unlock UI on every server ack
       clearError:   true,
     ));
   }
-
+ 
   void _onCardTapped(GameCardTapped event, Emitter<GameBlocState> emit) {
-    // Toggle: tap same card → deselect; tap new card → select.
-    final newId = state.selectedCardId == event.cardId ? null : event.cardId;
-    emit(state.copyWith(selectedCardId: newId, clearSelected: newId == null));
+    // Toggle: tap same card → deselect
+    if (state.selectedCardId == event.cardId) {
+      emit(state.copyWith(clearSelected: true));
+    } else {
+      emit(state.copyWith(selectedCardId: event.cardId));
+    }
   }
-
-  Future<void> _onCellTapped(
-      GameCellTapped event, Emitter<GameBlocState> emit) async {
+ 
+  Future<void> _onCellTapped(GameCellTapped event, Emitter<GameBlocState> emit) async {
     if (!state.canPlay(event.cellIndex)) return;
-    if (state.room == null || state.selectedCardId == null) return;
-
-    // Lock UI immediately; do NOT change board locally — wait for WS echo.
+    final roomCode = state.room?.code;
+    final cardId   = state.selectedCardId;
+    if (roomCode == null || cardId == null) return;
+ 
+    // Lock UI — do NOT mutate board locally; wait for WS echo
     emit(state.copyWith(isSubmitting: true, clearError: true));
-
+ 
     final result = await _playCard(PlayCardParams(
-      code:      state.room!.code,
+      code:      roomCode,
       cellIndex: event.cellIndex,
-      cardId:    state.selectedCardId!,
+      cardId:    cardId,
     ));
-
+ 
     result.fold(
+      // On error: unlock + show message. Board NOT updated — WS will push correct state.
       (f) => emit(state.copyWith(
         isSubmitting: false,
-        errorMessage: f.message,
+        errorMessage: _mapFailure(f),
       )),
-      // Success: do nothing — WS will push the new state.
-      (_) => {},
+      // On success: do nothing — WS echo via RoomBloc → GameRoomUpdated will arrive.
+      (_) {},
     );
   }
-
+ 
   void _onTimerTick(GameTimerTick _, Emitter<GameBlocState> emit) {
-    final deadline = state.room?.game?.turnDeadline;
+    final deadline = state.room?.currentGame?.turnDeadline;
     if (deadline == null) return;
-    final seconds = deadline.difference(DateTime.now()).inSeconds.clamp(0, 30);
-    emit(state.copyWith(countdownSeconds: seconds));
+    final secs = deadline.difference(DateTime.now()).inSeconds.clamp(0, 30);
+    emit(state.copyWith(countdownSeconds: secs));
   }
-
-  void _onExited(GameExited _, Emitter<GameBlocState> emit) {
-    _cleanup();
-  }
-
-  // ── Internal ──────────────────────────────────────────────────────────────
-
-  void _listenToRoom(String code) {
-    _wsSub?.cancel();
-    final stream = _watchRoom(code);
-    // We use a subscription rather than emit.forEach so it can be cancelled independently.
-    _wsSub = stream.listen(
-      (result) => result.fold(
-        (f) => add(GameRoomUpdated(state.room!)), // keep existing on error
-        (room) => add(GameRoomUpdated(room)),
-      ),
-    );
-  }
-
-  void _startCountdownTimer() {
+ 
+  // ── Countdown ─────────────────────────────────────────────────────────────
+ 
+  void _startCountdown() {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(
       const Duration(milliseconds: 500),
-      (_) => add(const GameTimerTick()),
+      (_) { if (!isClosed) add(const GameTimerTick()); },
     );
   }
-
-  void _cleanup() {
-    _countdownTimer?.cancel();
-    _wsSub?.cancel();
-    _watchRoom.stop();
-    _countdownTimer = null;
-    _wsSub = null;
-  }
-
+ 
+  String _mapFailure(Failure f) => switch (f) {
+    AuthFailure()    => 'Session expired.',
+    NetworkFailure() => 'No connection.',
+    _                => f.message,
+  };
+ 
   @override
   Future<void> close() {
-    _cleanup();
+    _countdownTimer?.cancel();
     return super.close();
   }
 }

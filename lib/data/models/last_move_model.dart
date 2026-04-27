@@ -12,8 +12,6 @@ class LastMoveModel extends LastMoveEntity {
     cellIndex: json['cellIndex'] as int,
     cardId:    json['cardId']    as int,
     placedBy:  json['placedBy']  as String,
-    captures:  (json['captures'] as List<dynamic>? ?? [])
-        .map((e) => e as int)
-        .toList(),
+    captures:  (json['captures'] as List<dynamic>? ?? []).cast<int>(),
   );
 }

@@ -30,14 +30,15 @@ class UserRepositoryImpl implements UserRepository {
         uid: response.uid, username: response.username, idToken: response.idToken);
       return UserEntity(uid: response.uid, username: response.username);
     } on ServerException catch (e) {
+      // 409 = username taken; surface the server message directly
       throw UserFailure(e.message);
     }
   }
-
+ 
   @override
   Future<Either<Failure, UserEntity>> getUserById(String uid) async {
     try {
-      final user = await _remote.getUser(uid);
+      final user = await _remote.getUserById(uid);
       return right(user);
     } on ServerException catch (e) {
       return left(UserFailure(e.message));

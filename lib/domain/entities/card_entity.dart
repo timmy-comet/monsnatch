@@ -16,10 +16,10 @@ class CardEntity extends Equatable {
     required this.power,
     required this.directions,
   });
-
-  /// Asset path — bundle cards as assets/images/cards/card_<id>.png
-  String get imageAsset => 'assets/images/cards/card_$id.png';
-
+ 
+  /// Asset path — bundle cards as assets/images/cards/card_<id>.webp
+  String get imageAsset => 'assets/images/cards/card_$id.webp';
+ 
   @override
   List<Object> get props => [id];
 }

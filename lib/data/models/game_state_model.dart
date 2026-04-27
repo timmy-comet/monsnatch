@@ -1,5 +1,6 @@
 import '../../domain/entities/game_state_entity.dart';
 import 'game_cell_model.dart';
+import 'hand_card_model.dart';
 import 'last_move_model.dart';
 
 class GameStateModel extends GameStateEntity {
@@ -10,6 +11,7 @@ class GameStateModel extends GameStateEntity {
     required super.turnNumber,
     required super.turnDeadline,
     required super.startedAt,
+    required super.starUid,
     required super.score,
     super.winner,
     super.lastMove,
@@ -22,12 +24,14 @@ class GameStateModel extends GameStateEntity {
       if (cell == null) return null;
       return GameCellModel.fromJson(cell as Map<String, dynamic>);
     }).toList();
-
-    // hands: { uid: number[] }
-    final rawHands = json['hands'] as Map<String, dynamic>? ?? {};
-    final hands = rawHands.map((uid, cardIds) => MapEntry(
+ 
+    // hands: Record<uid, HandCard[]>
+    final rawHands = (json['hands'] as Map<String, dynamic>? ?? {});
+    final hands = rawHands.map((uid, cardList) => MapEntry(
       uid,
-      (cardIds as List<dynamic>).map((id) => id as int).toList(),
+      (cardList as List<dynamic>)
+          .map((c) => HandCardModel.fromJson(c as Map<String, dynamic>))
+          .toList(),
     ));
 
     // score: { uid: number }
@@ -39,8 +43,9 @@ class GameStateModel extends GameStateEntity {
       hands:        hands,
       turn:         json['turn'] as String,
       turnNumber:   json['turnNumber'] as int,
-      turnDeadline: DateTime.parse(json['turnDeadline'] as String).toLocal(),
-      startedAt:    DateTime.parse(json['startedAt']    as String).toLocal(),
+      turnDeadline: DateTime.parse(json['turnDeadline'] as String),
+      startedAt:    DateTime.parse(json['startedAt']    as String),
+      starUid:      json['starUid']  as String,   // ★ KEY FIELD
       score:        score,
       winner:       json['winner'] as String?,
       lastMove:     json['lastMove'] == null

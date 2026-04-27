@@ -1,164 +1,166 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
 import '../../core/constants/app_colors.dart';
-import '../../domain/entities/room_entity.dart';
+import '../../domain/entities/game_cell_entity.dart';
+import '../../domain/entities/card_entity.dart';
 import '../blocs/game/game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
+import '../blocs/room/room_bloc.dart';
+import '../blocs/room/room_event.dart';
+import '../blocs/room/room_state.dart';
+import '../blocs/user/user_bloc.dart';
 import '../widgets/game_header_widget.dart';
 import '../widgets/grid_widget.dart';
 import '../widgets/hand_card_widget.dart';
 import 'victory_page.dart';
-
+ 
 class GamePage extends StatefulWidget {
-  final RoomEntity room;
-  final String     myUid;
-  const GamePage({super.key, required this.room, required this.myUid});
-
+  final String myUid;
+  const GamePage({super.key, required this.myUid});
+ 
   @override
   State<GamePage> createState() => _GamePageState();
 }
-
+ 
 class _GamePageState extends State<GamePage> {
+  late final RoomBloc _roomBloc;
+  late final GameBloc _gameBloc;
+ 
   @override
   void initState() {
     super.initState();
-    // Kick off loading: card catalog, opponent name, WS, countdown
-    context.read<GameBloc>().add(GameInitialized(
-      room:  widget.room,
-      myUid: widget.myUid,
-    ));
+    _roomBloc = context.read<RoomBloc>();
+    _gameBloc = context.read<GameBloc>();
+ 
+    // Get the current room from the latest RoomBloc state
+    final roomState = _roomBloc.state;
+    final room = roomState is RoomGameStarted ? roomState.room : null;
+ 
+    if (room != null) {
+      _gameBloc.add(GameInitialized(room: room, myUid: widget.myUid));
+    }
   }
-
+ 
   @override
   void dispose() {
-    context.read<GameBloc>().add(const GameExited());
+    // GamePage owns WS lifecycle — stop it here
+    _roomBloc.add(const WatchRoomStopped());
     super.dispose();
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       body: SafeArea(
-        child: BlocBuilder<GameBloc, GameBlocState>(
-          builder: (ctx, state) {
-            // Loading splash
-            if (state.phase == GamePhase.loading ||
-                state.room?.game == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    // ── Header: title, timer, scores ──
-                    GameHeaderWidget(state: state),
-
-                    // ── Opponent hand (face-down) ──
-                    _OpponentStrip(state: state),
-
-                    // ── 4×4 Board ──
-                    Expanded(child: GridWidget(state: state)),
-
-                    // ── Error toast ──
-                    if (state.errorMessage != null)
-                      Container(
-                        color:   Colors.red.shade50,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        child: Row(children: [
-                          const Icon(Icons.error_outline,
-                              color: Colors.red, size: 14),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(state.errorMessage!,
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.red)),
-                          ),
-                        ]),
-                      ),
-
-                    // ── My hand ──
-                    _MyHand(state: state),
-                  ],
-                ),
-
-                // ── Game-over overlay ──
-                if (state.phase == GamePhase.done)
-                  VictoryOverlay(
-                    state:    state,
-                    onReturn: () => Navigator.of(context).pop(),
-                  ),
-              ],
-            );
-          },
+        child: Stack(
+          children: [
+            // ── Pipe RoomBloc updates → GameBloc ──────────────────────────
+            BlocListener<RoomBloc, RoomState>(
+              listener: (ctx, roomState) {
+                if (roomState is RoomGameStarted) {
+                  _gameBloc.add(GameRoomUpdated(roomState.room));
+                }
+                if (roomState is RoomOpponentLeft || roomState is RoomError) {
+                  // Show snackbar — game will end naturally via WS
+                  final msg = roomState is RoomOpponentLeft
+                      ? 'Opponent left the room.'
+                      : (roomState as RoomError).message;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(msg), backgroundColor: Colors.orange.shade700),
+                  );
+                }
+              },
+              child: BlocBuilder<GameBloc, GameBlocState>(
+                builder: (ctx, state) {
+                  if (state.phase == GamePhase.loading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  return Column(
+                    children: [
+                      GameHeaderWidget(state: state),
+                      _OpponentStrip(state: state),
+                      Expanded(child: GridWidget(state: state)),
+                      if (state.errorMessage != null) _ErrorBanner(msg: state.errorMessage!),
+                      _MyHandStrip(state: state),
+                    ],
+                  );
+                },
+              ),
+            ),
+ 
+            // ── Victory overlay ──────────────────────────────────────────
+            BlocBuilder<GameBloc, GameBlocState>(
+              buildWhen: (prev, curr) => prev.phase != curr.phase,
+              builder: (ctx, state) => state.phase == GamePhase.done
+                  ? VictoryOverlay(
+                      state:    state,
+                      onLeave: () {
+                        ctx.read<RoomBloc>().add(
+                          LeaveRoomRequested(state.room?.code ?? ''));
+                        Navigator.of(context).popUntil((r) => r.isFirst);
+                      },
+                      onPlayAgain: () {
+                        ctx.read<RoomBloc>().add(
+                          StartGameRequested(state.room?.code ?? ''));
+                      },
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
-// ── Opponent strip (top) ──────────────────────────────────────────────────────
+ 
+// ── Opponent face-down strip ──────────────────────────────────────────────────
 class _OpponentStrip extends StatelessWidget {
   final GameBlocState state;
   const _OpponentStrip({required this.state});
-
+ 
   @override
   Widget build(BuildContext context) {
-    final handCount = state.opponentHand.length;
-    final isOppStar = !state.iAmStar;
-
+    final count      = state.opponentActiveCardIds.length;
+    final isOppStar  = !state.iAmStar;
+    final tokenColor = isOppStar ? AppColors.createRoomBtn : const Color(0xFF3D4EA0);
+ 
     return Container(
-      color:   AppColors.scoreBg,
+      color: AppColors.scoreBg,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
         children: [
-          // Token badge
           CircleAvatar(
-            radius:          14,
-            backgroundColor: isOppStar
-                ? AppColors.starFaction
-                : AppColors.moonFaction,
+            radius: 14,
+            backgroundColor: tokenColor,
             child: Icon(
               isOppStar ? Icons.star_rounded : Icons.nightlight_round,
-              color: Colors.white, size: 14,
-            ),
+              color: Colors.white, size: 14),
           ),
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              state.opponentUsername ?? 'Opponent',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-            ),
-            Text('Cards: $handCount',
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.subtitleText)),
+            Text(state.opponentUsername,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            Text('Cards: $count',
+                style: const TextStyle(fontSize: 11, color: AppColors.subtitleText)),
           ]),
           const Spacer(),
           Text('${state.opponentScore}',
-              style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w900)),
-          const SizedBox(width: 4),
-
-          // Face-down hand placeholders
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(width: 8),
+          // Face-down placeholders
           SizedBox(
             height: 28,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              shrinkWrap:      true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount:    handCount.clamp(0, 12),
-              separatorBuilder: (_, __) => const SizedBox(width: 3),
-              itemBuilder: (_, __) => Container(
-                width: 16,
-                decoration: BoxDecoration(
-                  color:        Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
+            child: Row(
+              children: List.generate(count.clamp(0, 10), (_) =>
+                Container(
+                  width: 14, height: 22,
+                  margin: const EdgeInsets.only(left: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3)),
+                )),
             ),
           ),
         ],
@@ -166,63 +168,54 @@ class _OpponentStrip extends StatelessWidget {
     );
   }
 }
-
-// ── My hand (bottom) ──────────────────────────────────────────────────────────
-class _MyHand extends StatelessWidget {
+ 
+// ── My hand strip ─────────────────────────────────────────────────────────────
+class _MyHandStrip extends StatelessWidget {
   final GameBlocState state;
-  const _MyHand({required this.state});
-
+  const _MyHandStrip({required this.state});
+ 
   @override
   Widget build(BuildContext context) {
+    final isStar     = state.iAmStar;
+    final tokenColor = isStar ? AppColors.createRoomBtn : const Color(0xFF3D4EA0);
+ 
     return Container(
-      color:   AppColors.scoreBg,
+      color: AppColors.scoreBg,
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // My score + team label
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(children: [
               CircleAvatar(
-                radius:          14,
-                backgroundColor: state.iAmStar
-                    ? AppColors.starFaction
-                    : AppColors.moonFaction,
+                radius: 14, backgroundColor: tokenColor,
                 child: Icon(
-                  state.iAmStar
-                      ? Icons.star_rounded
-                      : Icons.nightlight_round,
-                  color: Colors.white, size: 14,
-                ),
+                  isStar ? Icons.star_rounded : Icons.nightlight_round,
+                  color: Colors.white, size: 14),
               ),
               const SizedBox(width: 8),
-              const Text('You  ',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 13)),
+              const Text('You', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
               const Spacer(),
               Text('${state.myScore}',
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w900)),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             ]),
           ),
           const SizedBox(height: 6),
-
-          // Scrollable hand
           SizedBox(
             height: 90,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount:    state.myHand.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemCount: state.myAllCardIds.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
               itemBuilder: (ctx, i) {
-                final cardId = state.myHand[i];
-                final card   = state.cardById(cardId);
+                final cardId     = state.myAllCardIds[i];
+                final isUsed     = !state.myActiveCardIds.contains(cardId);
+                final card       = state.cardById(cardId);
                 final isSelected = state.selectedCardId == cardId;
-                final canInteract = state.isMyTurn && !state.isSubmitting;
-
+                final canInteract = state.isMyTurn && !state.isSubmitting && !isUsed;
+ 
                 return HandCardWidget(
                   cardId:     cardId,
                   card:       card,
@@ -239,4 +232,21 @@ class _MyHand extends StatelessWidget {
       ),
     );
   }
+}
+ 
+// ── Error banner ──────────────────────────────────────────────────────────────
+class _ErrorBanner extends StatelessWidget {
+  final String msg;
+  const _ErrorBanner({required this.msg});
+ 
+  @override
+  Widget build(BuildContext context) => Container(
+    color: Colors.red.shade50,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    child: Row(children: [
+      const Icon(Icons.error_outline, color: Colors.red, size: 14),
+      const SizedBox(width: 6),
+      Expanded(child: Text(msg, style: const TextStyle(fontSize: 12, color: Colors.red))),
+    ]),
+  );
 }

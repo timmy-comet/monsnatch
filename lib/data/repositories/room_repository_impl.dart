@@ -26,6 +26,10 @@ class RoomRepositoryImpl implements RoomRepository {
       _wrap(() => _remote.startRoom(code));
 
   @override
+  Future<Either<Failure, RoomEntity>> leaveRoom(String code) =>
+      _wrap(() => _remote.leaveRoom(code));    
+
+  @override
   Future<Either<Failure, RoomEntity>> playCard({
     required String code,
     required int    cellIndex,
@@ -77,6 +81,8 @@ class RoomRepositoryImpl implements RoomRepository {
     } on ServerException catch (e) {
       if (e.statusCode == 401) return left(AuthFailure(e.message));
       return left(RoomFailure(e.message));
+    } on AuthException catch (e) {
+      return left(AuthFailure(e.message));
     } catch (e) {
       return left(NetworkFailure(e.toString()));
     }

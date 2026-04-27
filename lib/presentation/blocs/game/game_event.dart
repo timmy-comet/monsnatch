@@ -12,7 +12,7 @@ class GameInitialized extends GameEvent {
   final RoomEntity room;
   final String     myUid;
   const GameInitialized({required this.room, required this.myUid});
-  @override List<Object> get props => [room, myUid];
+  @override List<Object> get props => [myUid];
 }
 
 /// WS pushed a new room state → replace everything.
@@ -38,6 +38,4 @@ class GameCellTapped extends GameEvent {
 
 /// Internal: every 500 ms — recompute countdown from turnDeadline.
 class GameTimerTick extends GameEvent { const GameTimerTick(); }
-
-/// Player left the battle screen.
-class GameExited extends GameEvent { const GameExited(); }
+ 

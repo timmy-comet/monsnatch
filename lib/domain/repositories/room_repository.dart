@@ -12,6 +12,7 @@ abstract class RoomRepository {
     required int    cellIndex,
     required int    cardId,
   });
+  Future<Either<Failure, RoomEntity>> leaveRoom(String code);
   Future<Either<Failure, List<CardEntity>>> getCards();
   Stream<Either<Failure, RoomEntity>> watchRoom(String code);
   void stopWatching();
