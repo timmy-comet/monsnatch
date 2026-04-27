@@ -104,9 +104,7 @@ class _CardFace extends StatelessWidget {
             height: 16,
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
-              color: isStarOwner
-                  ? const Color(0xFFF5C842)
-                  : const Color(0xFF3949AB),
+              color: const Color(0xFFECECEC),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(

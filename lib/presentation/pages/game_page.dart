@@ -45,55 +45,63 @@ class _GamePageState extends State<GamePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            BlocListener<RoomBloc, RoomState>(
-              listener: (ctx, roomState) {
-                if (roomState is RoomGameStarted) {
-                  _gameBloc.add(GameRoomUpdated(roomState.room));
-                }
-                if (roomState is RoomOpponentLeft || roomState is RoomError) {
-                  final msg = roomState is RoomOpponentLeft
-                      ? 'Opponent left the room.'
-                      : (roomState as RoomError).message;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text(msg),
-                        backgroundColor: Colors.orange.shade700),
-                  );
-                }
-              },
-              child: BlocBuilder<GameBloc, GameBlocState>(
-                builder: (ctx, state) {
-                  if (state.phase == GamePhase.loading) {
-                    return const Center(child: CircularProgressIndicator());
+    return Container(
+      decoration: const BoxDecoration(
+      image: DecorationImage(
+        image: AssetImage("assets/images/bg_image.png"), 
+        fit: BoxFit.cover,
+      ),
+    ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F0) , 
+        body: SafeArea(
+          child: Stack(
+            children: [    
+              BlocListener<RoomBloc, RoomState>(
+                listener: (ctx, roomState) {
+                  if (roomState is RoomGameStarted) {
+                    _gameBloc.add(GameRoomUpdated(roomState.room));
                   }
-                  return _GameView(state: state);
+                  if (roomState is RoomOpponentLeft || roomState is RoomError) {
+                    final msg = roomState is RoomOpponentLeft
+                        ? 'Opponent left the room.'
+                        : (roomState as RoomError).message;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(msg),
+                          backgroundColor: Colors.orange.shade700),
+                    );
+                  }
                 },
+                child: BlocBuilder<GameBloc, GameBlocState>(
+                  builder: (ctx, state) {
+                    if (state.phase == GamePhase.loading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return _GameView(state: state);
+                  },
+                ),
               ),
-            ),
-
-            BlocBuilder<GameBloc, GameBlocState>(
-              buildWhen: (prev, curr) => prev.phase != curr.phase,
-              builder: (ctx, state) => state.phase == GamePhase.done
-                  ? VictoryOverlay(
-                      state: state,
-                      onLeave: () {
-                        ctx.read<RoomBloc>().add(
-                            LeaveRoomRequested(state.room?.code ?? ''));
-                        Navigator.of(context).popUntil((r) => r.isFirst);
-                      },
-                      onPlayAgain: () {
-                        ctx.read<RoomBloc>().add(
-                            StartGameRequested(state.room?.code ?? ''));
-                      },
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ],
+      
+              BlocBuilder<GameBloc, GameBlocState>(
+                buildWhen: (prev, curr) => prev.phase != curr.phase,
+                builder: (ctx, state) => state.phase == GamePhase.done
+                    ? VictoryOverlay(
+                        state: state,
+                        onLeave: () {
+                          ctx.read<RoomBloc>().add(
+                              LeaveRoomRequested(state.room?.code ?? ''));
+                          Navigator.of(context).popUntil((r) => r.isFirst);
+                        },
+                        onPlayAgain: () {
+                          ctx.read<RoomBloc>().add(
+                              StartGameRequested(state.room?.code ?? ''));
+                        },
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -115,7 +115,7 @@ class _GridCell extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 500),
         decoration: BoxDecoration(
           color: canPlace
               ? const Color(0x33FFFFFF)
