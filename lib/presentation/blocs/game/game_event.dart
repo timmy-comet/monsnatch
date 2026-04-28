@@ -36,6 +36,16 @@ class GameCellTapped extends GameEvent {
   @override List<Object> get props => [cellIndex];
 }
 
+/// Player dropped a card from their hand onto a valid empty cell.
+/// Carries the dragged card's id so the dropped card is authoritative —
+/// independent of state.selectedCardId, which can lag the gesture.
+class GameCardDroppedOnCell extends GameEvent {
+  final int cellIndex;
+  final int cardId;
+  const GameCardDroppedOnCell({required this.cellIndex, required this.cardId});
+  @override List<Object> get props => [cellIndex, cardId];
+}
+
 /// Internal: every 500 ms — recompute countdown from turnDeadline.
 class GameTimerTick extends GameEvent { const GameTimerTick(); }
  

@@ -27,11 +27,12 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
         _getUserById = getUserById,
         _playCard    = playCard,
         super(const GameBlocState()) {
-    on<GameInitialized>  (_onInitialized);
-    on<GameRoomUpdated>  (_onRoomUpdated);
-    on<GameCardTapped>   (_onCardTapped);
-    on<GameCellTapped>   (_onCellTapped);
-    on<GameTimerTick>    (_onTimerTick);
+    on<GameInitialized>      (_onInitialized);
+    on<GameRoomUpdated>      (_onRoomUpdated);
+    on<GameCardTapped>       (_onCardTapped);
+    on<GameCellTapped>       (_onCellTapped);
+    on<GameCardDroppedOnCell>(_onCardDroppedOnCell);
+    on<GameTimerTick>        (_onTimerTick);
   }
  
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -99,13 +100,29 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
   }
  
   Future<void> _onCellTapped(GameCellTapped event, Emitter<GameBlocState> emit) async {
-    if (!state.canPlay(event.cellIndex)) return;
+    final cardId = state.selectedCardId;
+    if (cardId == null) return;
+    await _placeCard(cellIndex: event.cellIndex, cardId: cardId, emit: emit);
+  }
+
+  Future<void> _onCardDroppedOnCell(
+    GameCardDroppedOnCell event,
+    Emitter<GameBlocState> emit,
+  ) async {
+    await _placeCard(cellIndex: event.cellIndex, cardId: event.cardId, emit: emit);
+  }
+
+  Future<void> _placeCard({
+    required int cellIndex,
+    required int cardId,
+    required Emitter<GameBlocState> emit,
+  }) async {
+    if (!state.canPlay(cellIndex)) return;
     final snapshot = state.room;
     final game     = snapshot?.currentGame;
-    final cardId   = state.selectedCardId;
     final myUid    = state.myUid;
-    final placed   = state.cardById(cardId ?? -1);
-    if (snapshot == null || game == null || cardId == null || placed == null) {
+    final placed   = state.cardById(cardId);
+    if (snapshot == null || game == null || placed == null) {
       return;
     }
 
@@ -114,7 +131,7 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
     // flipped cards animate the moment the card lands. Server echo via WS
     // overrides on mismatch. On HTTP error we revert to the snapshot.
     final newBoard = List<GameCellEntity?>.from(game.board);
-    newBoard[event.cellIndex] = GameCellEntity(
+    newBoard[cellIndex] = GameCellEntity(
       cardId:   cardId,
       ownerUid: myUid,
       placedBy: myUid,
@@ -123,7 +140,7 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
     final isPlayer2 = snapshot.player2 == myUid;
     final captures  = CaptureCalculator.compute(
       placedCard: placed,
-      cellIndex:  event.cellIndex,
+      cellIndex:  cellIndex,
       board:      newBoard,
       catalog:    state.catalog,
       isPlayer2:  isPlayer2,
@@ -163,7 +180,7 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
       score:    newScore,
       turn:     oppUid.isEmpty ? game.turn : oppUid,
       lastMove: LastMoveEntity(
-        cellIndex: event.cellIndex,
+        cellIndex: cellIndex,
         cardId:    cardId,
         placedBy:  myUid,
         captures:  captures,
@@ -187,7 +204,7 @@ class GameBloc extends Bloc<GameEvent, GameBlocState> {
 
     final result = await _playCard(PlayCardParams(
       code:      snapshot.code,
-      cellIndex: event.cellIndex,
+      cellIndex: cellIndex,
       cardId:    cardId,
     ));
 

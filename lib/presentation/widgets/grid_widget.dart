@@ -105,7 +105,9 @@ class GridWidget extends StatelessWidget {
             ? () => context.read<GameBloc>().add(GameCellTapped(idx))
             : null,
         onAcceptDrop: canPlace
-            ? () => context.read<GameBloc>().add(GameCellTapped(idx))
+            ? (cardId) => context.read<GameBloc>().add(
+                  GameCardDroppedOnCell(cellIndex: idx, cardId: cardId),
+                )
             : null,
       );
     }
@@ -179,7 +181,7 @@ class _EmptyCell extends StatelessWidget {
   final bool highlight;
   final bool canAcceptDrop;
   final VoidCallback? onTap;
-  final VoidCallback? onAcceptDrop;
+  final ValueChanged<int>? onAcceptDrop;
 
   const _EmptyCell({
     required this.highlight,
@@ -192,7 +194,7 @@ class _EmptyCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => canAcceptDrop,
-      onAcceptWithDetails:     (_) => onAcceptDrop?.call(),
+      onAcceptWithDetails:     (d) => onAcceptDrop?.call(d.data),
       builder: (_, candidate, rejected) {
         final hoveringInvalid = rejected.isNotEmpty;
         final hoveringValid   = candidate.isNotEmpty;
